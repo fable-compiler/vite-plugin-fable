@@ -8,5 +8,5 @@
     "module": "NodeNext",
     "jsx": "react"
   },
-  "include": ["src/vite-plugin-fable/index.js", "./docs/scripts/command.js"]
+  "include": ["index.js"]
 }

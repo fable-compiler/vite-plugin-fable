@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Fable.Core" Version="4.5.0" />
+    <!-- unit test project -->
+    <PackageVersion Include="Fable.Pyxpecto" Version="1.2.0" />
+  </ItemGroup>
+</Project>

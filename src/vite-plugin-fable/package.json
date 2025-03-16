@@ -6,12 +6,19 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "vitest",
-    "format": "bunx --bun prettier ./package.json ./sample-project/vite.config.js ./docs/*.md ./docs/content/*.css ./docs/scripts/*.js ./docs/*.html ./.devcontainer/devcontainer.json --write && dotnet fantomas .",
-    "postinstall": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./src/vite-plugin-fable/bin",
+    "format": "bunx --bun prettier ./package.json ./index.js ./types.d.ts --write",
     "lint": "bunx tsc"
   },
-  "workspaces": ["src/*", "tests/*"],
+  "files": [
+    "index.js",
+    "../../Directory.Build.props",
+    "../../Directory.Packages.props",
+    "../../Fable.Daemon/*.fsproj",
+    "../../Fable.Daemon/**/*.fs",
+    "../../Fable.Daemon/**/*.fsi",
+    "../../Fable.Daemon/debug",
+    "!../../Fable.Daemon/obj"
+  ],
   "keywords": [],
   "author": "nojaf",
   "license": "Apache-2.0",

@@ -13,6 +13,8 @@ import { codeFrameColumns } from "@babel/code-frame";
 
 withResolvers.shim();
 
+console.log("Loaded local plugin");
+
 const fsharpFileRegex = /\.(fs|fsx)$/;
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const fableDaemon = path.join(currentDir, "bin/Fable.Daemon.dll");
@@ -41,6 +43,8 @@ const defaultConfig = { jsx: null, noReflection: false, exclude: [] };
  * @returns {import('vite').Plugin} A Vite plugin object with the standard structure and hooks.
  */
 export default function fablePlugin(userConfig) {
+
+  console.log("fablePlugin called", userConfig);
   /** @type {import("./types.js").PluginState} */
   const state = {
     config: Object.assign({}, defaultConfig, userConfig),
@@ -373,7 +377,6 @@ export default function fablePlugin(userConfig) {
       },
     };
   }
-
   return {
     name: "vite-plugin-fable",
     enforce: "pre",
@@ -398,6 +401,7 @@ export default function fablePlugin(userConfig) {
           `No .fsproj file was found in ${configDir}`,
         );
       } else {
+        console.log("Found fsproj file");
         logInfo("configResolved", `Entry fsproj ${state.fsproj}`);
       }
     },
@@ -470,6 +474,8 @@ export default function fablePlugin(userConfig) {
         logDebug("transform", id);
         if (state.compilableFiles.has(id)) {
           let code = state.compilableFiles.get(id);
+          console.log("transforming");
+          console.log(code);
           // If Fable outputted JSX, we still need to transform this.
           // @vitejs/plugin-react does not do this.
           if (state.config.jsx) {
