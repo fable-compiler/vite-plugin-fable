@@ -1,0 +1,19 @@
+{
+  "name": "vite-plugin-fable-library-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vitest --config vite.config.test.mts",
+    "build": "vite build",
+    "test": "vitest --config vite.config.test.mts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "typescript": "~5.7.2",
+    "vite": "^6.2.0",
+    "vite-plugin-dts": "^4.5.0",
+    "vite-plugin-fable": "workspace:*",
+    "vitest": "^3.0.7"
+  }
+}

@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="util.fs" />
+    <Compile Include="index.test.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Fable.Pyxpecto" />
+    <PackageReference Remove="Fable.Compiler" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\Library\Library.fsproj" />
+  </ItemGroup>
+
+</Project>
