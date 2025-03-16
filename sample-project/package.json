@@ -18,6 +18,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "4.3.4",
     "vite": "^6.0.1",
-    "vite-plugin-inspect": "0.8.8"
+    "vite-plugin-inspect": "0.8.8",
+    "vite-plugin-fable": "workspace:*"
   }
 }

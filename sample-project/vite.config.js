@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 import Inspect from "vite-plugin-inspect";
-import fable from "../index.js";
+import fable from "vite-plugin-fable";
 import react from "@vitejs/plugin-react";
 
 // https://vitejs.dev/config/
