@@ -5,7 +5,7 @@ open System.IO
 open System.Collections.Concurrent
 open Microsoft.Extensions.Logging
 open Thoth.Json.Core
-open Thoth.Json.SystemTextJson
+open Thoth.Json.System.Text.Json
 open Fable
 open Fable.Compiler.ProjectCracker
 

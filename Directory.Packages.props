@@ -10,7 +10,7 @@
     <PackageVersion Include="StreamJsonRpc" Version="2.20.17" />
     <PackageVersion Include="Fable.Compiler" Version="5.0.0-alpha.9" />
     <PackageVersion Include="Suave" Version="2.6.2" />
-    <PackageVersion Include="Thoth.Json.Core" Version="0.1.0" />
+    <PackageVersion Include="Thoth.Json.Core" Version="0.7.0" />
     <PackageVersion Include="protobuf-net" Version="3.2.30" />
     <!-- lock transitive dependencies -->
     <PackageVersion Include="Fable.AST" Version="4.6.0-beta.1" />
@@ -18,12 +18,13 @@
     <PackageVersion Include="System.Diagnostics.Debug" Version="4.3.0" />
     <PackageVersion Include="System.IO.FileSystem.Primitives" Version="4.3.0" />
     <PackageVersion Include="System.Runtime.Extensions" Version="4.3.1" />
-    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
+    <PackageVersion Include="System.Text.Json" Version="9.0.0" />
     <PackageVersion Include="MessagePack" Version="2.5.192" />
     <!-- unit test project -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
     <PackageVersion Include="Nerdbank.Streams" Version="2.11.79" />
-    <PackageVersion Include="NUnit" Version="3.14.0" />
-    <PackageVersion Include="NUnit3TestAdapter" Version="4.2.1" />
+    <PackageVersion Include="NUnit" Version="4.3.2" />
+    <PackageVersion Include="NUnit3TestAdapter" Version="5.0.0" />
+    <PackageVersion Include="Thoth.Json.System.Text.Json" Version="0.2.1" />
   </ItemGroup>
 </Project>

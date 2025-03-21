@@ -6,7 +6,7 @@ open System.Reflection
 open System.Runtime.InteropServices
 open Microsoft.Extensions.Logging
 open Thoth.Json.Core
-open Thoth.Json.SystemTextJson
+open Thoth.Json.System.Text.Json
 open ProtoBuf
 open Fable.Compiler.ProjectCracker
 
