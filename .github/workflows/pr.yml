@@ -69,6 +69,8 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          TAG_NAME="pr-${GITHUB_EVENT.number}"
+          BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | tr / -)
+          COMMIT_HASH=${GITHUB_SHA::8}
+          TAG_NAME="pr-${BRANCH_NAME}-${COMMIT_HASH}"
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           bun publish --tag ${TAG_NAME}
