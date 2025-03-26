@@ -36,3 +36,39 @@ jobs:
 
       - name: Build docs
         run: dotnet fsdocs build --noapidocs --projects "$(pwd)/Fable.Daemon/Fable.Daemon.fsproj"
+
+      - name: Cache package
+        uses: actions/cache@v3
+        with:
+          path: |
+            *.tgz
+          key: ${{ runner.os }}-package-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-package-
+
+  
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            *.tgz
+          key: ${{ runner.os }}-package-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-package-
+
+      - uses: oven-sh/setup-bun@v1
+
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          TAG_NAME="pr-${GITHUB_EVENT.number}"
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          bun publish --tag ${TAG_NAME}
