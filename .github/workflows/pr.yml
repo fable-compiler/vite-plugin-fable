@@ -77,4 +77,4 @@ jobs:
           BRANCH_NAME=$(echo ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}} | tr / -)
           COMMIT_HASH=${GITHUB_SHA::8}
           TAG_NAME="pr-${BRANCH_NAME}-${COMMIT_HASH}"
-          npm publish $(ls *.tgz) --tag ${TAG_NAME}
+          npm publish *.tgz --tag ${TAG_NAME}
