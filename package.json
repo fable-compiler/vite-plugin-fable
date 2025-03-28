@@ -20,7 +20,8 @@
     "Fable.Daemon/**/*.fs",
     "Fable.Daemon/**/*.fsi",
     "Fable.Daemon/debug",
-    "!Fable.Daemon/obj"
+    "!Fable.Daemon/obj",
+    "!Fable.Daemon/README.md"
   ],
   "keywords": [],
   "author": "nojaf",
