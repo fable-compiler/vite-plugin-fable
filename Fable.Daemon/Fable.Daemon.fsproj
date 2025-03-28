@@ -6,26 +6,26 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Thoth/Decode.fs"/>
-    <!--        <Compile Include="Thoth/Encode.fs" />-->
-    <Compile Include="Types.fs"/>
-    <Compile Include="MSBuild.fs"/>
-    <Compile Include="Caching.fs"/>
-    <Compile Include="CoolCatCracking.fs"/>
-    <Content Include="debug\index.html"/>
+    <Compile Include="Types.fs" />
+    <Compile Include="MSBuild.fs" />
+    <Compile Include="Caching.fs" />
+    <Compile Include="CoolCatCracking.fs" />
+    <Content Include="debug\index.html" />
     <Content Include="debug\favicon.ico" />
-    <Compile Include="Debug.fsi"/>
-    <Compile Include="Debug.fs"/>
-    <Compile Include="Program.fs"/>
+    <Compile Include="Debug.fsi" />
+    <Compile Include="Debug.fs" />
+    <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Fable.React" />
-    <PackageReference Include="FSharp.Core"/>
-    <PackageReference Include="FSharp.SystemTextJson"/>
-    <PackageReference Include="StreamJsonRpc"/>
-    <PackageReference Include="Suave"/>
-    <PackageReference Include="Thoth.Json.Core"/>
-    <PackageReference Include="protobuf-net"/>
+    <PackageReference Include="FSharp.Core" />
+    <PackageReference Include="FSharp.SystemTextJson" />
+    <PackageReference Include="StreamJsonRpc" />
+    <PackageReference Include="Suave" />
+    <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="Thoth.Json.Core" />
+    <PackageReference Include="protobuf-net" />
+    <PackageReference Include="Thoth.Json.System.Text.Json" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-fable",
-  "version": "0.0.34",
+  "version": "0.0.35",
   "homepage": "http://fable.io/vite-plugin-fable/",
   "description": "",
   "main": "index.js",
