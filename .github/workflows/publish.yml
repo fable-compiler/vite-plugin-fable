@@ -1,0 +1,39 @@
+name: Publish to npm
+
+on:
+  workflow_run:
+    workflows: ["Main"]
+    types:
+      - completed
+    branches: [ "main" ]
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org/'
+      - uses: oven-sh/setup-bun@v1
+      - run: bun install
+      - name : update changelog
+        id: update-changelog
+        run: bun run update-changelog
+        continue-on-error: true
+      - name: Log No Need To Publish
+        if: steps.update-changelog.outcome == 'failure'
+        run: echo "skipping publish because no changes were detected"
+      - name: Publish to npm
+        if: steps.update-changelog.outcome == 'success'
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Push tags
+        if: steps.update-changelog.outcome == 'success'
+        run: |
+          git config --local user.name "github-actions"
+          git config --local user.email "github-actions@users.noreply.github.com"
+          git push origin main --tags
