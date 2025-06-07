@@ -1,0 +1,22 @@
+{
+  "name": "hello-world",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "archive": "cd .. && bun pm pack && cd hello-world && mkdir -p lib && mv ../*.tgz ./lib/latest.tgz",
+    "install-arch": "bun add ./lib/latest.tgz -d --trust",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0",
+    "vite-plugin-fable": "./lib/latest.tgz",
+    "vitest": "^3.0.9"
+  },
+  "trustedDependencies": [
+    "esbuild",
+    "vite-plugin-fable"
+  ]
+}
