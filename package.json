@@ -10,7 +10,8 @@
     "format": "bunx --bun prettier ./package.json ./index.js ./types.d.ts ./sample-project/vite.config.js ./docs/*.md ./docs/content/*.css ./docs/scripts/*.js ./docs/*.html ./.devcontainer/devcontainer.json --write && dotnet fantomas .",
     "postinstall": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./bin",
     "lint": "bunx tsc",
-    "prepublishOnly": "bun changelog-updater.js"
+    "update-changelog": "bun changelog-updater.js",
+    "manualPublish": "bun run update-changelog && npm publish"
   },
   "files": [
     "index.js",
