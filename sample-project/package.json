@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bunx --bun vite",
+    "dev:debug": "VITE_PLUGIN_FABLE_DEBUG=1 bunx --bun vite",
     "build": "bunx --bun vite build",
     "preview": "bunx --bun vite preview"
   },

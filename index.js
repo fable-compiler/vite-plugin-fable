@@ -414,6 +414,30 @@ export default function fablePlugin(userConfig) {
           state.dotnetProcess.stdout,
         );
 
+        if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
+          state.endpoint.on("error", (...args) => {
+            logDebug("protocol", `[fable] error event args: ${args.map(a => typeof a + ': ' + JSON.stringify(a)).join(" | ")}`);
+          });
+        }
+
+        // Attach protocol-level error handler
+        state.endpoint.on("error", async (err) => {
+          if (err && /id mismatch/.test(err)) {
+            // this error is recoverable, the plugin will just reload all files.
+            logWarn(
+              "protocol",
+              `error from JSONRPCEndpoint: ${
+                err && err.message ? err.message : err
+              }`
+            );
+          }
+          else {
+            logError("protocol", 
+              `unknown error: ${err}, ${err.code}, ${err.context ?? "no context"}`);
+          }
+        });
+        
+
         if (state.isBuild) {
           await projectChanged(
             this.addWatchFile.bind(this),

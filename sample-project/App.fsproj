@@ -10,14 +10,14 @@
     <ItemGroup>
         <PackageReference Include="Fable.Browser.Dom" Version="2.14.0" />
         <PackageReference Include="Fable.Core" Version="4.3.0" />
-        <PackageReference Include="Nojaf.Fable.React" Version="0.0.2" />
+        <PackageReference Include="Feliz" Version="2.9.0" />
         <PackageReference Include="Thoth.Json" Version="10.2.0" />
     </ItemGroup>
 
     <ItemGroup>
         <Compile Include="Math.fs" />
-        <Compile Include="Component.fsi" />
-        <Compile Include="Component.fs" />
+        <Compile Include="./components/TestComponent.fs" />
+        <Compile Include="RootComponent.fs" />
         <Compile Include="Library.fs" />
     </ItemGroup>
 </Project>

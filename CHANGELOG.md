@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),  
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
+## [0.2.1] - 2025-06-28
+### Fixed
+- Bug fix targeting issue ([#53](https://github.com/fable-compiler/vite-plugin-fable/issues/53)) as log warn and no crash, for protocol error in json rpc serialization when there is id count mismatch
+- removed Nojaf.React bindings nuget package and using Feliz instead for sample-project, as it is what is most used in community projects and suggested by official fable docs for React.
+- pr ([#55](https://github.com/fable-compiler/vite-plugin-fable/pull/55))
+
 ## [0.2.0] - 2025-06-24
 ### Changed
 - Upgrade to Vite 7.0.0 as peer dependency and adjust transform hook to use latest filter property, pr ([#49](https://github.com/fable-compiler/vite-plugin-fable/pull/49)), targets issue ([#39]([#39](https://github.com/fable-compiler/vite-plugin-fable/issues/39))
