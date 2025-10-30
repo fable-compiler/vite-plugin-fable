@@ -19,20 +19,19 @@ jobs:
           registry-url: 'https://registry.npmjs.org/'
       - uses: oven-sh/setup-bun@v1
       - run: bun install
-      - name : update changelog
-        id: update-changelog
-        run: bun run update-changelog
-        continue-on-error: true
-      - name: Log No Need To Publish
-        if: steps.update-changelog.outcome == 'failure'
-        run: echo "skipping publish because no changes were detected"
+      - name: update changelog
+        run: |
+          if bun run update-changelog; then
+            echo "changelog updated"
+          else
+            echo "skipping publish because no changes were detected"
+            exit 1
+          fi
       - name: Publish to npm
-        if: steps.update-changelog.outcome == 'success'
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Push tags
-        if: steps.update-changelog.outcome == 'success'
         run: |
           git config --local user.name "github-actions"
           git config --local user.email "github-actions@users.noreply.github.com"
