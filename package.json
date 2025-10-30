@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-fable",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "homepage": "http://fable.io/vite-plugin-fable/",
   "description": "",
   "main": "index.js",
@@ -34,11 +34,11 @@
     "@fable-org/fable-library-js": "2.0.0-beta.3",
     "promise.withresolvers": "^1.0.3",
     "rxjs": "^7.8.1",
-    "ts-lsp-client": "^1.0.3"
+    "ts-lsp-client": "1.0.4"
   },
   "peerDependencies": {
     "esbuild": "*",
-    "vite": "^6.0.0"
+    "vite": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",

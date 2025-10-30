@@ -20,6 +20,9 @@ More thoughts on this can be read from the [documentation](https://fable.io/vite
 A first package was pushed to npm. This was merely to reserve the package name.  
 You can read the code, that's is it for now.
 
+### Recent Notes
+Support for the latest .NET runtime was added in [v0.1.1](https://github.com/fable-compiler/vite-plugin-fable/blob/main/CHANGELOG.md#011---2025-06-03). Please upgrade to the latest version. Earlier versions may fail silently if the .NET 8 runtime is missing—see the changelog for details.
+
 ## Video
 
 I talked a little bit about this project during this stream:

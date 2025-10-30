@@ -15,6 +15,7 @@ withResolvers.shim();
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
+
 const fableDaemon = path.join(currentDir, "bin/Fable.Daemon.dll");
 
 if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
@@ -465,8 +466,9 @@ export default function fablePlugin(userConfig) {
         logCritical("buildStart", `Unexpected failure during buildStart: ${e}`);
       }
     },
-    transform: async function (src, id) {
-      if (fsharpFileRegex.test(id)) {
+    transform: {
+      filter: { id: fsharpFileRegex },
+      async handler(src, id) {
         logDebug("transform", id);
         if (state.compilableFiles.has(id)) {
           let code = state.compilableFiles.get(id);
