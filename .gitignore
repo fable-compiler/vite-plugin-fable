@@ -492,9 +492,9 @@ output/
 
 # VSCode
 .vscode/
-# copied from the repo root by prepublishOnly
-/packages/vite-plugin-fable/Directory.Build.props
-/packages/vite-plugin-fable/Directory.Packages.props
+# copied from the repo root by scripts/release-publish.ts
+/packages/vite-plugin-fable/README.md
+/packages/vite-plugin-fable/LICENSE
 
 # TypeScript build output for the Vite plugin
 packages/vite-plugin-fable/dist/

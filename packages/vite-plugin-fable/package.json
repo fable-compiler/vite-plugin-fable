@@ -4,8 +4,14 @@
   "description": "",
   "keywords": [],
   "homepage": "http://fable.io/vite-plugin-fable/",
+  "bugs": "https://github.com/fable-compiler/vite-plugin-fable/issues",
   "license": "Apache-2.0",
   "author": "nojaf",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fable-compiler/vite-plugin-fable.git",
+    "directory": "packages/vite-plugin-fable"
+  },
   "funding": "https://nojaf.com/",
   "files": [
     "dist",
@@ -28,7 +34,7 @@
     "test": "bun test",
     "lint": "oxlint --deny-warnings && bun run lint:types",
     "lint:types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.docs.json",
-    "prepublishOnly": "bun run build:daemon && bun run build && bun ../../scripts/changelog-updater.ts"
+    "prepack": "bun run build:daemon && bun run build"
   },
   "dependencies": {
     "@babel/code-frame": "^8.0.0",
@@ -40,7 +46,6 @@
   "devDependencies": {
     "@types/bun": "^1.4.0",
     "@types/node": "^26.4.0",
-    "keep-a-changelog": "^3.1.0",
     "typescript": "7.0.2",
     "vite": "catalog:"
   },
