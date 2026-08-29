@@ -66,6 +66,8 @@ interface Harness {
   start(config?: ResolvedConfig): Promise<void>;
   /** Calls the `transform` hook the way Vite's plugin container does. */
   transform(id: string): Promise<TransformOutput>;
+  /** Whether rolldown would call the `transform` handler for this id at all. */
+  transformFilterMatches(id: string): boolean;
   /** Calls `hotUpdate` the way Vite's HMR pipeline does. */
   hotUpdate(file: string, type?: "create" | "update" | "delete"): Promise<HotModule[] | void>;
   /** Payloads the plugin pushed to the browser. */
@@ -138,6 +140,13 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
     },
     async transform(id: string): Promise<TransformOutput> {
       return (plugin.transform as any).handler.call(context, "", id);
+    },
+    transformFilterMatches(id: string): boolean {
+      const filter: { include: RegExp[]; exclude: RegExp[] } = (plugin.transform as any).filter.id;
+      return (
+        filter.include.some((pattern: RegExp): boolean => pattern.test(id)) &&
+        !filter.exclude.some((pattern: RegExp): boolean => pattern.test(id))
+      );
     },
   };
 }
@@ -324,6 +333,31 @@ describe("transform", () => {
     await h.start();
     expect((await h.transform(componentFs))?.code).toBe("export const c = 1;");
     expect(await h.transform(componentFsi)).toBeUndefined();
+  });
+
+  test("matches an F# id that carries a query", () => {
+    const h: Harness = harness();
+    expect(h.transformFilterMatches(mathFs)).toBe(true);
+    expect(h.transformFilterMatches(`${mathFs}?worker`)).toBe(true);
+    expect(h.transformFilterMatches(`${sampleProject}/Script.fsx?v=1`)).toBe(true);
+    expect(h.transformFilterMatches(`${sampleProject}/Program.cs`)).toBe(false);
+  });
+
+  test("leaves ?raw and ?url to Vite's asset plugin", () => {
+    const h: Harness = harness();
+    // These ask for the file, not the module it compiles to; Vite's asset plugin already answered.
+    expect(h.transformFilterMatches(`${mathFs}?raw`)).toBe(false);
+    expect(h.transformFilterMatches(`${mathFs}?url`)).toBe(false);
+  });
+
+  test("serves the compiled output for an id that carries a query", async () => {
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "export const sum = 1;" } },
+    );
+    await h.start();
+    // The map is keyed by file path, so the lookup has to drop the query first.
+    expect((await h.transform(`${mathFs}?worker`))?.code).toBe("export const sum = 1;");
   });
 
   test("returns nothing for an F# file the daemon never compiled", async () => {

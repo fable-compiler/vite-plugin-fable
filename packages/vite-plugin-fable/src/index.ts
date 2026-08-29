@@ -11,6 +11,7 @@ import type {
   ResolvedConfig,
 } from "vite";
 import colors from "picocolors";
+import { makeIdFiltersToMatchWithQuery } from "@rolldown/pluginutils";
 import { codeFrameColumns } from "@babel/code-frame";
 import { startDaemon } from "./daemon.js";
 import { resolveOptions } from "./options.js";
@@ -28,6 +29,19 @@ import type {
 export type { FableConfiguration, PluginOptions } from "./types.js";
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
+
+/**
+ * `Component.fs?raw` and `Component.fs?url` ask for the file, not the module it compiles to, and
+ * Vite's asset plugin has already answered by the time a transform runs. Compiling over that
+ * answer would turn `import source from "./Component.fs?raw"` into the compiled module.
+ */
+const assetQueryRegex = /[?&](raw|url)(?:&|$)/;
+
+/** Vite's own `cleanUrl`, which is internal to `vite/src/shared/utils` and not exported. */
+function cleanUrl(id: string): string {
+  return id.replace(/[?#].*$/, "");
+}
+
 if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
   console.log(`Running daemon in debug mode, visit http://localhost:9014 to view logs`);
 }
@@ -462,10 +476,18 @@ export function createFablePlugin(
       }
     },
     transform: {
-      filter: { id: fsharpFileRegex },
+      // An id can carry a query — `?worker`, or anything a plugin upstream appended — and a bare
+      // `/\.fs$/` never matches those, so the F# would reach the JavaScript parser uncompiled.
+      filter: {
+        id: {
+          include: makeIdFiltersToMatchWithQuery([fsharpFileRegex]),
+          exclude: [assetQueryRegex],
+        },
+      },
       async handler(src, id) {
         logDebug("transform", id);
-        let code: string | undefined = state.compilableFiles.get(id);
+        const file: string = cleanUrl(id);
+        let code: string | undefined = state.compilableFiles.get(file);
         if (code !== undefined) {
           // If Fable outputted JSX, we still need to transform this.
           // @vitejs/plugin-react does not do this.
