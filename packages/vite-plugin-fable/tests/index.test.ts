@@ -62,7 +62,7 @@ interface EnvironmentStub {
   sent: unknown[];
 }
 
-type TransformOutput = { code: string; map: { mappings: "" } } | undefined;
+type LoadOutput = { code: string; map: { mappings: "" }; moduleType: "js" } | undefined;
 
 interface Harness {
   plugin: Plugin;
@@ -78,10 +78,10 @@ interface Harness {
    * This is what Vite does before `httpServer.listen`.
    */
   boot(config?: ResolvedConfig): Promise<void>;
-  /** Calls the `transform` hook the way Vite's plugin container does. */
-  transform(id: string): Promise<TransformOutput>;
-  /** Whether rolldown would call the `transform` handler for this id at all. */
-  transformFilterMatches(id: string): boolean;
+  /** Calls the `load` hook the way Vite's plugin container does. */
+  load(id: string): Promise<LoadOutput>;
+  /** Whether rolldown would call the `load` handler for this id at all. */
+  loadFilterMatches(id: string): boolean;
   /**
    * Calls `hotUpdate` the way Vite's HMR pipeline does. Vite computes one `timestamp` per file
    * change and then calls the hook once per environment with it, so tests can pass both.
@@ -181,11 +181,11 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
       // A build has already compiled by the time `buildStart` returns; a dev server has not.
       if (config.command !== "build") await afterCoalescing();
     },
-    async transform(id: string): Promise<TransformOutput> {
-      return (plugin.transform as any).handler.call(context, "", id);
+    async load(id: string): Promise<LoadOutput> {
+      return (plugin.load as any).handler.call(context, id);
     },
-    transformFilterMatches(id: string): boolean {
-      const filter: { include: RegExp[]; exclude: RegExp[] } = (plugin.transform as any).filter.id;
+    loadFilterMatches(id: string): boolean {
+      const filter: { include: RegExp[]; exclude: RegExp[] } = (plugin.load as any).filter.id;
       return (
         filter.include.some((pattern: RegExp): boolean => pattern.test(id)) &&
         !filter.exclude.some((pattern: RegExp): boolean => pattern.test(id))
@@ -330,7 +330,7 @@ describe("buildStart", () => {
 
   test("does not hold the dev server back while the first compile runs", async () => {
     // Vite awaits `buildStart` before `httpServer.listen`, so a slow crack there means no URL and
-    // no overlay. The wait belongs in `transform`, which is per request.
+    // no overlay. The wait belongs in `load`, which is per request.
     const h: Harness = harness(
       {},
       { sourceFiles: [mathFs], compiled: { [mathFs]: "export const x = 1;" } },
@@ -347,7 +347,7 @@ describe("buildStart", () => {
     expect(h.daemon.initialCompileCalls).toBe(0);
 
     let served = false;
-    const request: Promise<TransformOutput> = h.transform(mathFs).then((r: TransformOutput) => {
+    const request: Promise<LoadOutput> = h.load(mathFs).then((r: LoadOutput) => {
       served = true;
       return r;
     });
@@ -597,14 +597,14 @@ describe("fast refresh", () => {
   });
 });
 
-describe("transform", () => {
+describe("load", () => {
   test("serves the compiled output for a project file", async () => {
     const h: Harness = harness(
       {},
       { sourceFiles: [mathFs], compiled: { [mathFs]: "export const sum = 1;" } },
     );
     await h.start();
-    const result: TransformOutput = await h.transform(mathFs);
+    const result: LoadOutput = await h.load(mathFs);
     expect(result?.code).toBe("export const sum = 1;");
   });
 
@@ -614,9 +614,9 @@ describe("transform", () => {
       { sourceFiles: [mathFs], compiled: { [mathFs]: "export const sum = 1;" } },
     );
     await h.start();
-    // `null` would tell Vite the previous mapping still applies, and it would then build a map
-    // claiming the JavaScript is the contents of a `.fs` file.
-    expect((await h.transform(mathFs))?.map).toEqual({ mappings: "" });
+    // `null` would have Vite treat the JavaScript as the contents of the `.fs` file, and every
+    // map built from it would then point at F# lines that never held that code.
+    expect((await h.load(mathFs))?.map).toEqual({ mappings: "" });
   });
 
   test("keys compiled output off what the daemon returned, not the source list", async () => {
@@ -631,23 +631,35 @@ describe("transform", () => {
       },
     );
     await h.start();
-    expect((await h.transform(componentFs))?.code).toBe("export const c = 1;");
-    expect(await h.transform(componentFsi)).toBeUndefined();
+    expect((await h.load(componentFs))?.code).toBe("export const c = 1;");
+    // Nothing routes a signature file here in the first place; the browser imports the `.fs`.
+    expect(h.loadFilterMatches(componentFsi)).toBe(false);
+  });
+
+  test("says the module is JavaScript rather than leaving the extension to say", async () => {
+    // `vite:oxc` sets this too, but only for ids `@vitejs/plugin-react` claims, so a project
+    // without it would leave rolldown to infer a module type from `.fs`.
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "export const sum = 1;" } },
+    );
+    await h.start();
+    expect((await h.load(mathFs))?.moduleType).toBe("js");
   });
 
   test("matches an F# id that carries a query", () => {
     const h: Harness = harness();
-    expect(h.transformFilterMatches(mathFs)).toBe(true);
-    expect(h.transformFilterMatches(`${mathFs}?worker`)).toBe(true);
-    expect(h.transformFilterMatches(`${sampleProject}/Script.fsx?v=1`)).toBe(true);
-    expect(h.transformFilterMatches(`${sampleProject}/Program.cs`)).toBe(false);
+    expect(h.loadFilterMatches(mathFs)).toBe(true);
+    expect(h.loadFilterMatches(`${mathFs}?worker`)).toBe(true);
+    expect(h.loadFilterMatches(`${sampleProject}/Script.fsx?v=1`)).toBe(true);
+    expect(h.loadFilterMatches(`${sampleProject}/Program.cs`)).toBe(false);
   });
 
   test("leaves ?raw and ?url to Vite's asset plugin", () => {
     const h: Harness = harness();
     // These ask for the file, not the module it compiles to; Vite's asset plugin already answered.
-    expect(h.transformFilterMatches(`${mathFs}?raw`)).toBe(false);
-    expect(h.transformFilterMatches(`${mathFs}?url`)).toBe(false);
+    expect(h.loadFilterMatches(`${mathFs}?raw`)).toBe(false);
+    expect(h.loadFilterMatches(`${mathFs}?url`)).toBe(false);
   });
 
   test("serves the compiled output for an id that carries a query", async () => {
@@ -657,20 +669,24 @@ describe("transform", () => {
     );
     await h.start();
     // The map is keyed by file path, so the lookup has to drop the query first.
-    expect((await h.transform(`${mathFs}?worker`))?.code).toBe("export const sum = 1;");
+    expect((await h.load(`${mathFs}?worker`))?.code).toBe("export const sum = 1;");
   });
 
-  test("returns nothing for an F# file the daemon never compiled", async () => {
+  test("errors rather than handing raw F# to the JS parser in dev", async () => {
+    // Loading nothing leaves Vite to read the file and hand the F# to the JavaScript parser, so
+    // the page breaks either way. A warning only made it break less legibly.
     const h: Harness = harness({}, { sourceFiles: [] });
     await h.start();
-    expect(await h.transform(`${sampleProject}/Unknown.fs`)).toBeUndefined();
+    expect(h.load(`${sampleProject}/Unknown.fs`)).rejects.toThrow(
+      "Unknown.fs is not part of App.fsproj, so Fable did not compile it.",
+    );
   });
 
   test("errors rather than handing raw F# to the JS parser during a build", async () => {
     const h: Harness = harness({}, { sourceFiles: [] });
     await h.start(buildConfig());
-    expect(h.transform(`${sampleProject}/Unknown.fs`)).rejects.toThrow(
-      `${sampleProject}/Unknown.fs was not compiled by Fable, so it cannot be bundled.`,
+    expect(h.load(`${sampleProject}/Unknown.fs`)).rejects.toThrow(
+      "Unknown.fs is not part of App.fsproj, so Fable did not compile it.",
     );
   });
 
@@ -680,7 +696,7 @@ describe("transform", () => {
       { sourceFiles: [libraryFs], compiled: { [libraryFs]: "export const a = <div>hi</div>;" } },
     );
     await h.start();
-    const result: TransformOutput = await h.transform(libraryFs);
+    const result: LoadOutput = await h.load(libraryFs);
     expect(result?.code).toContain("jsx");
     expect(result?.code).not.toContain("<div>");
   });
@@ -691,7 +707,7 @@ describe("transform", () => {
       { sourceFiles: [libraryFs], compiled: { [libraryFs]: "export const a = 1;" } },
     );
     await h.start();
-    expect((await h.transform(libraryFs))?.code).toBe("export const a = 1;");
+    expect((await h.load(libraryFs))?.code).toBe("export const a = 1;");
   });
 });
 
@@ -713,7 +729,7 @@ describe("hot updates", () => {
     await h.hotUpdate(mathFs);
 
     expect(h.daemon.compileCalls).toEqual([[mathFs]]);
-    expect((await h.transform(mathFs))?.code).toBe("const v = 2;");
+    expect((await h.load(mathFs))?.code).toBe("const v = 2;");
   });
 
   test("ignores files that are not part of the project", async () => {
@@ -786,7 +802,7 @@ describe("hot updates", () => {
 
     // Each file was compiled by its own batch, and Library.fs really did get compiled.
     expect(h.daemon.compileCalls).toEqual([[mathFs], [libraryFs]]);
-    expect((await h.transform(libraryFs))?.code).toBe("const w = 2;");
+    expect((await h.load(libraryFs))?.code).toBe("const w = 2;");
   });
 
   test("still updates a module nothing imports, rather than doing nothing", async () => {
@@ -859,7 +875,7 @@ describe("hot updates", () => {
     await h.hotUpdate(componentFsi);
 
     expect(h.daemon.compileCalls).toEqual([[componentFsi]]);
-    expect((await h.transform(componentFs))?.code).toBe("const c = 2;");
+    expect((await h.load(componentFs))?.code).toBe("const c = 2;");
   });
 
   test("re-cracks the project and reloads when an MSBuild dependency changes", async () => {

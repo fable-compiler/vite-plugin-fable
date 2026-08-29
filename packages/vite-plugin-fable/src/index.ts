@@ -603,7 +603,10 @@ export function createFablePlugin(
         throw e;
       }
     },
-    transform: {
+    // The compiled JavaScript is already in memory, so there is nothing on disk worth reading: a
+    // `load` serves it directly, where a `transform` would have Vite read the whole `.fs` file
+    // only to throw it away.
+    load: {
       // An id can carry a query — `?worker`, or anything a plugin upstream appended — and a bare
       // `/\.fs$/` never matches those, so the F# would reach the JavaScript parser uncompiled.
       filter: {
@@ -612,49 +615,52 @@ export function createFablePlugin(
           exclude: [assetQueryRegex],
         },
       },
-      async handler(src, id) {
-        logDebug("transform", short(cleanUrl(id)));
+      async handler(id) {
+        logDebug("load", short(cleanUrl(id)));
         // The dev server listens before the first compile is done, so a request can arrive while
         // the project is still being cracked. This is the wait that used to sit in `buildStart`.
         await ready;
         const file: string = cleanUrl(id);
         let code: string | undefined = state.compilableFiles.get(file);
-        if (code !== undefined) {
-          // The plugin owns the JSX transform, and has to: Vite's own oxc pass forces
-          // `lang: "js"` for a non-JS extension (`plugins/oxc.ts:266-268`), so JSX inside a `.fs`
-          // id is a parse error there. `@vitejs/plugin-react` does not transform per file either.
-          //
-          // Refresh is deliberately left off. `vite:oxc` runs over this output afterwards and
-          // applies it (or `vite:react-compiler` does, when `react({ compiler: true })` is on);
-          // asking for it here as well registers every component twice.
-          if (state.config.jsx) {
-            const runtime: "automatic" | "classic" =
-              state.config.jsx === "automatic" ? "automatic" : "classic";
-            const oxcResult: { code: string } = await transformWithOxc(code, id, {
-              lang: "jsx",
-              jsx: { runtime },
-            });
-            code = oxcResult.code;
+        if (code === undefined) {
+          if (projectFailure) {
+            // The crack this request waited for is the one that failed, so say why here: in dev
+            // this is what puts the reason in the browser overlay instead of only in the terminal.
+            this.error(`Fable could not compile the project: ${projectFailure.message}`);
           }
-          return {
-            code,
-            // Not `null`, which would claim the previous mapping still holds: this replaced F#
-            // with JavaScript. `{ mappings: "" }` is how Vite's own plugins say a map was lost.
-            map: { mappings: "" as const },
-          };
-        } else if (projectFailure) {
-          // The crack this request waited for is the one that failed, so say why here: in dev this
-          // is what puts the reason in the browser overlay instead of only in the terminal.
-          this.error(`Fable could not compile the project: ${projectFailure.message}`);
-        } else if (state.isBuild) {
-          // Returning nothing would let Vite parse the F# source as JavaScript, and the user would
-          // get a syntax error pointing at `module Foo` instead of the real cause.
-          this.error(`${id} was not compiled by Fable, so it cannot be bundled.`);
-        } else {
-          logWarn(
-            `${short(cleanUrl(id))} is not part of the project, so Fable did not compile it.`,
+          // Loading nothing would leave Vite to read the F# off disk and parse it as JavaScript,
+          // and the user would get a syntax error pointing at `module Foo` instead of the real
+          // cause. A warning was not enough: the page still broke, just less clearly.
+          this.error(
+            `${short(file)} is not part of ${short(requireFsproj())}, so Fable did not compile it. Add a <Compile Include="..." /> for it.`,
           );
         }
+        // The plugin owns the JSX transform, and has to: Vite's own oxc pass forces
+        // `lang: "js"` for a non-JS extension (`plugins/oxc.ts:266-268`), so JSX inside a `.fs`
+        // id is a parse error there. `@vitejs/plugin-react` does not transform per file either.
+        //
+        // Refresh is deliberately left off. `vite:oxc` runs over this output afterwards and
+        // applies it (or `vite:react-compiler` does, when `react({ compiler: true })` is on);
+        // asking for it here as well registers every component twice.
+        if (state.config.jsx) {
+          const runtime: "automatic" | "classic" =
+            state.config.jsx === "automatic" ? "automatic" : "classic";
+          const oxcResult: { code: string } = await transformWithOxc(code, id, {
+            lang: "jsx",
+            jsx: { runtime },
+          });
+          code = oxcResult.code;
+        }
+        return {
+          code,
+          // Not `null`, which would have Vite treat the JavaScript as the contents of the `.fs`
+          // file. `{ mappings: "" }` is how Vite's own plugins say a map was lost.
+          map: { mappings: "" as const },
+          // What this is, rather than what the extension suggests. `vite:oxc` says the same
+          // (`plugins/oxc.ts:330`), but only for ids `@vitejs/plugin-react` claims, so a project
+          // without it would leave rolldown to infer a module type from `.fs`.
+          moduleType: "js" as const,
+        };
       },
     },
     // `hotUpdate` covers dev; this is what reaches the plugin under `vite build --watch`.

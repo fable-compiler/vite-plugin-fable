@@ -22,8 +22,8 @@ export default defineConfig({
   //
   // DevTools is the interactive view: run `bun run dev` and open the app, then `#devframe`.
   // Inspect is the headless one: `build: true` writes `.vite-inspect/reports/` on `bun run build`,
-  // where each module has its `__load__` (F# source) and `vite-plugin-fable` (emitted JS) steps as
-  // plain JSON — readable without a browser, which is what makes it useful in a terminal or CI.
+  // where each module's `vite-plugin-fable` step holds the emitted JavaScript as plain JSON —
+  // readable without a browser, which is what makes it useful in a terminal or CI.
   plugins: [
     DevTools(),
     Inspect({ build: true }),

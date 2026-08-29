@@ -58,7 +58,7 @@ sequenceDiagram
     Daemon-->>Plugin: source files, diagnostics, MSBuild inputs
     Plugin->>Daemon: fable/initial-compile
     Daemon-->>Plugin: JavaScript per F# file
-    Vite->>Plugin: transform (per .fs request)
+    Vite->>Plugin: load (per .fs request)
 </div>
 
 ### Starting the daemon
@@ -84,17 +84,22 @@ The daemon also reports which MSBuild files the project depends on. The plugin w
 change to an `fsproj` or a `Directory.Build.props` triggers a full re-crack rather than an
 incremental compile.
 
-The JavaScript for your own source files is held in memory and served from `transform`; nothing is
+The JavaScript for your own source files is held in memory and served from `load`; nothing is
 written next to your `.fs` files. Compiled `fable_modules` output is the exception — it is cached to
 disk under `obj/` so dependencies do not have to be recompiled on every start. That cache is keyed
 on everything that changes what Fable emits, including the plugin options.
 
 ### Serving a file
 
-`transform` looks the requested id up in the compiled output and returns the JavaScript. It waits on
-the first compile before answering, which is the wait that used to sit in `buildStart` — so a
-request that arrives while the project is still cracking blocks, and a failure surfaces in the
-browser overlay instead of only in the terminal.
+`load` looks the requested id up in the compiled output and returns the JavaScript, so Vite never
+reads the `.fs` file it would otherwise have to throw away. It waits on the first compile before
+answering, which is the wait that used to sit in `buildStart` — so a request that arrives while the
+project is still cracking blocks, and a failure surfaces in the browser overlay instead of only in
+the terminal.
+
+An `.fs` file Fable did not compile is an error, in dev as well as in a build. Answering with
+nothing would leave Vite to read the F# and hand it to the JavaScript parser, and the syntax error
+that follows points at `module Foo` rather than at the file missing from your `fsproj`.
 
 If Fable emitted JSX, the plugin transforms it here too. It has to: Vite's own oxc pass forces
 `lang: "js"` for a non-JavaScript extension, which disables JSX parsing. See

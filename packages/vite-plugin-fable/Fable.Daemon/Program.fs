@@ -1,4 +1,5 @@
 ﻿open System
+open System.Collections.Concurrent
 open System.Diagnostics
 open System.IO
 open System.Threading
@@ -32,13 +33,43 @@ type CrackerInput =
         CrackerOptions : CrackerOptions
     }
 
+/// What every file in the project last contained, as Fable's `File` remembers it.
+///
+/// `File.ReadSource` hashes the source the first time it reads a file and hands back the content
+/// lazily from then on, so a checker that only wants to know whether a file changed never pays for
+/// the read. Building a fresh set of `File` values for every compile threw that away: every file in
+/// the project, `fable_modules` included, was read and hashed again on every edit.
+///
+/// Keeping them means trusting the plugin to report every change, which it can: Vite watches the
+/// whole root and the plugin adds the sources outside it to the watcher itself. A file that changed
+/// without a report would be compiled from what it used to say, so anything less than certain about
+/// which files changed has to `ForgetAll`.
+///
+/// Concurrent because the checker type-checks files in parallel, so the reader is called from
+/// several threads at once. A `Dictionary` here corrupts itself under a project type-check.
+type SourceFileCache() =
+    let files = ConcurrentDictionary<FullPath, Fable.Compiler.File>()
+
+    /// A reader over the project's sources, answering from what was read before where it can.
+    member _.MakeSourceReader () : SourceReader =
+        fun (path : FullPath) -> files.GetOrAdd(path, Fable.Compiler.File).ReadSource()
+
+    /// Forget these files, because they changed on disk.
+    member _.Forget (paths : FullPath seq) : unit =
+        for path in paths do
+            files.TryRemove path |> ignore
+
+    /// Forget the lot. Which files the project even has is decided by a crack, so a new one makes
+    /// everything read for the previous project unsafe to reuse.
+    member _.ForgetAll () : unit = files.Clear ()
+
 type Model =
     {
         Resolver : CachedMSBuildCrackerResolver
         Checker : InteractiveChecker
         CrackerInput : CrackerInput option
         CrackerResponse : CrackerResponse
-        SourceReader : SourceReader
+        SourceFiles : SourceFileCache
         PathResolver : PathResolver
         TypeCheckProjectResult : TypeCheckProjectResult
     }
@@ -57,7 +88,6 @@ type TypeCheckedProjectData =
         CrackerInput : CrackerInput
         Checker : InteractiveChecker
         CrackerResponse : CrackerResponse
-        SourceReader : SourceReader
         /// An array of files that influence the design time build
         /// If any of these change, the plugin should respond accordingly.
         DependentFiles : FullPath array
@@ -128,11 +158,10 @@ let tryTypeCheckProject
             logger.LogDebug ("CrackerResponse: {crackerResponse}", crackerResponse)
             let checker = InteractiveChecker.Create crackerResponse.ProjectOptions
 
-            let sourceReader =
-                Fable.Compiler.File.MakeSourceReader (
-                    Array.map Fable.Compiler.File crackerResponse.ProjectOptions.SourceFiles
-                )
-                |> snd
+            // A crack decides which files the project has, so nothing read for the previous one
+            // can be assumed to still describe this project.
+            model.SourceFiles.ForgetAll ()
+            let sourceReader = model.SourceFiles.MakeSourceReader ()
 
             let! typeCheckResult, typeCheckTime =
                 timeAsync (CodeServices.typeCheckProject sourceReader checker cliArgs crackerResponse)
@@ -157,7 +186,6 @@ let tryTypeCheckProject
                                 model.CrackerInput
                         Checker = checker
                         CrackerResponse = crackerResponse
-                        SourceReader = sourceReader
                         DependentFiles = dependentFiles
                     }
         with ex ->
@@ -301,11 +329,10 @@ let tryCompileFiles
                     |> Array.tryFind (fun f -> f = String.Concat (file, "i"))
                     |> Option.defaultValue file
 
-            let sourceReader =
-                Fable.Compiler.File.MakeSourceReader (
-                    Array.map Fable.Compiler.File model.CrackerResponse.ProjectOptions.SourceFiles
-                )
-                |> snd
+            // The files the plugin saw change, and so the only ones whose contents can differ from
+            // what the last compile read.
+            model.SourceFiles.Forget fileNames
+            let sourceReader = model.SourceFiles.MakeSourceReader ()
 
             let! filesToCompile =
                 let input = List.map mapLeadingFile fileNames
@@ -434,7 +461,6 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                                     CrackerInput = Some result.CrackerInput
                                     Checker = result.Checker
                                     CrackerResponse = result.CrackerResponse
-                                    SourceReader = result.SourceReader
                                     TypeCheckProjectResult = result.TypeCheckProjectResult
                                 }
 
@@ -492,7 +518,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                     Resolver = CachedMSBuildCrackerResolver logger
                     Checker = Unchecked.defaultof<InteractiveChecker>
                     CrackerResponse = Unchecked.defaultof<CrackerResponse>
-                    SourceReader = Unchecked.defaultof<SourceReader>
+                    SourceFiles = SourceFileCache ()
                     PathResolver =
                         { new PathResolver with
                             member _.TryPrecompiledOutPath (_sourceDir, _relativePath) = None
