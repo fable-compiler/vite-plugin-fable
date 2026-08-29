@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizePath } from "vite";
@@ -285,15 +287,21 @@ describe("configResolved", () => {
         throw new Error(message);
       },
     };
-    // `/tmp` has no .fsproj in it.
-    const config: ResolvedConfig = {
-      ...buildConfig(),
-      root: "/tmp",
-    } as unknown as ResolvedConfig;
-    await (plugin.configResolved as any).call(context, config);
+    // A directory that exists and holds no .fsproj. `/tmp` is not that directory on Windows, and
+    // `configResolved` reads the root, so it failed there with ENOENT before reaching the point.
+    const emptyRoot: string = normalizePath(mkdtempSync(path.join(os.tmpdir(), "vpf-no-fsproj-")));
+    try {
+      const config: ResolvedConfig = {
+        ...buildConfig(),
+        root: emptyRoot,
+      } as unknown as ResolvedConfig;
+      await (plugin.configResolved as any).call(context, config);
 
-    expect((plugin.buildStart as any).call(context, {})).rejects.toThrow(/No .fsproj was found/);
-    expect(daemon.projectChangedCalls).toHaveLength(0);
+      expect((plugin.buildStart as any).call(context, {})).rejects.toThrow(/No .fsproj was found/);
+      expect(daemon.projectChangedCalls).toHaveLength(0);
+    } finally {
+      rmSync(emptyRoot, { recursive: true, force: true });
+    }
   });
 
   test("compiles Release for a production build and Debug otherwise", async () => {
