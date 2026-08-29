@@ -28,3 +28,23 @@ Support for the latest .NET runtime was added in [v0.1.1](https://github.com/fab
 I talked a little bit about this project during this stream:
 
 [![vite-plugin-fable stream](http://img.youtube.com/vi/nVpUaVFNpMk/maxresdefault.jpg)](https://youtu.be/mnqwwtSQfRU?si=VpDDv3SzHikXL5iu&t=141 "vite-plugin-fable")
+
+
+## Publishing a new version
+
+- Edit `CHANGELOG.md` adding the version and changes
+
+- Bump version:
+  ```zsh
+  npm version patch
+  ```
+
+- Publish:
+  ```zsh
+  npm publish
+  ```
+
+- Push version tags:
+  ```zsh
+  git push origin <branch> --follow-tags
+  ```
