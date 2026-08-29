@@ -217,6 +217,19 @@ describe("configResolved", () => {
     expect(debug.daemon.projectChangedCalls[0].configuration).toBe("Debug");
   });
 
+  test("compiles Release for any build, not just --mode production", async () => {
+    const h: Harness = harness();
+    // A custom mode is still a production build; the F# should not be compiled Debug.
+    await h.start(resolvedConfig({ env: { MODE: "staging" } as any, command: "build" as const }));
+    expect(h.daemon.projectChangedCalls[0].configuration).toBe("Release");
+  });
+
+  test("honours an explicit configuration option over the command", async () => {
+    const h: Harness = harness({ configuration: "Release" });
+    await h.start();
+    expect(h.daemon.projectChangedCalls[0].configuration).toBe("Release");
+  });
+
   test("passes the Fable options through to the daemon", async () => {
     const h: Harness = harness({ noReflection: true, exclude: ["Foo.Bar"] });
     await h.start();

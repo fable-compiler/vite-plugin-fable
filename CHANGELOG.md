@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The MSBuild configuration follows the Vite command rather than `env.MODE`, so `vite build --mode staging` no longer compiles Debug F# into a production bundle. A new `configuration` plugin option overrides it, defaulting to `Release` for `vite build` and `Debug` for `vite dev`.
 - The `transform` hook reports `map: { mappings: "" }` instead of `map: null`. `null` claims the previous source mapping still applies, which made later stages emit a map labelling the compiled JavaScript as the contents of a `.fs` file — devtools showed an F# filename containing JavaScript. Real F#-to-JS source maps remain blocked on Fable.
 - Compiled output is now keyed off what the daemon returned rather than looked up per source file. The two sets differ (signature files are never compiled), and indexing the daemon's map with an already-normalised path would have yielded `undefined` for every entry had the daemon ever reported a non-POSIX path.
 - CI runs the daemon test suite; previously only the plugin tests ran.
