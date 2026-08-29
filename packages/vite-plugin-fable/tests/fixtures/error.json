@@ -1,0 +1,6 @@
+{
+  "case": "Error",
+  "fields": {
+    "error": "Could not crack the project."
+  }
+}

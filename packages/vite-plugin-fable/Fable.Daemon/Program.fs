@@ -421,16 +421,7 @@ let private replyWithError (logger : ILogger) (msg : Msg) (error : string) : uni
 type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     let jsonMessageFormatter = new SystemTextJsonFormatter ()
 
-    do
-        jsonMessageFormatter.JsonSerializerOptions <-
-            let options =
-                JsonSerializerOptions (PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
-
-            let jsonFSharpOptions =
-                JsonFSharpOptions.Default().WithUnionTagName("case").WithUnionFieldsName("fields")
-
-            options.Converters.Add (JsonUnionConverter jsonFSharpOptions)
-            options
+    do jsonMessageFormatter.JsonSerializerOptions <- Wire.serializerOptions ()
 
     let cts = new CancellationTokenSource ()
 

@@ -1,0 +1,8 @@
+{
+  "case": "Success",
+  "fields": {
+    "compiledFSharpFiles": {
+      "/project/Math.fs": "export const sum = 1;"
+    }
+  }
+}

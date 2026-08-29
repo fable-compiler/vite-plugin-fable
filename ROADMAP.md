@@ -2,7 +2,7 @@
 
 Nothing here is done. Items are deleted as they land, so what remains is open work, a question nobody has answered, or a decision recorded so it does not get re-litigated. Finished work belongs in `CHANGELOG.md`, not here. Each item has enough context to be picked up independently.
 
-Item 1 is blocked upstream and can only be tracked. Items 2-4 are projects, 5 and 6 are smaller, item 7 records a rejected decision and item 8 is loose ends.
+Item 1 is blocked upstream and can only be tracked. Items 2-4 are projects, item 5 is a smaller one, item 6 records a rejected decision and item 7 is loose ends.
 
 References into `~/Projects/Fable` are against Fable 5.14, the version in the workspace catalog.
 
@@ -139,24 +139,13 @@ Passed over because the bits would then arrive on first `vite dev` rather than a
 - [ ] Give a clear error when the daemon package cannot be resolved. A missing .NET SDK is already detected spawn-side and fails fast.
 - [ ] README: state that the .NET 10 SDK is required, and why.
 
-## 5. Tighten the daemon ↔ plugin RPC contract
-
-The contract is hand-mirrored today and the mirroring is positional, which is where it actually hurts. `FSharpDiscriminatedUnion` types `fields` as `any[]`, so the decoding indexes blind: `fields[0]` / `[1]` / `[2]` in `daemon.ts`. Reordering a field in an F# DU case in `Types.fs` silently breaks the plugin with no compile error on either side. That decoding is confined to `daemon.ts` rather than spread across call sites, which is what makes this tractable.
-
-**To do**
-
-- [ ] Return named records from the daemon's JSON-RPC methods instead of positional DU fields (`FSharp.SystemTextJson` is already a dependency), so the wire format is self-describing.
-- [ ] Replace the positional decoding inside `daemon.ts` with a discriminated result type TypeScript can narrow.
-- [ ] Validate at the JSON-RPC boundary only — the three response shapes from `fable/project-changed`, `fable/initial-compile` and `fable/compile`. That is the one place untyped JSON enters the process. Zod or similar; note that a hand-written schema is still a mirror of the daemon's contract, it just fails loudly instead of silently. Validation matters more if item 4 goes the `dotnet tool` route, where a plugin and daemon of different versions can genuinely meet.
-- [ ] Better: generate the types (and schemas) from `Fable.Daemon/Types.fs` at build time so the two cannot drift at all. If this is cheap it beats hand-written schemas.
-
-## 6. Cache invalidation: an explicit `<Import>` is invisible
+## 5. Cache invalidation: an explicit `<Import>` is invisible
 
 - The design-time build cache key (`Caching.fs`) takes its MSBuild inputs from `MSBuildAllProjects` plus the convention imports asked for by name (`DirectoryBuildPropsPath` and friends). Since MSBuild 16.9 an import no longer adds itself to `MSBuildAllProjects`, so a file pulled in by an explicit `<Import>` is in neither list: changing it neither invalidates the cache nor re-cracks the project. Getting the real list means `dotnet msbuild -preprocess` or an equivalent, a much heavier query than the property reads the cache key does today.
 
-## 7. Rejected: writing the plugin in F# / Fable
+## 6. Rejected: writing the plugin in F# / Fable
 
-Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` between daemon and plugin; item 5 delivers that at a fraction of the cost.
+Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` between daemon and plugin, which the named wire format and the fixtures both sides are tested against now deliver at a fraction of the cost.
 
 - Of the roughly fifteen findings in the Vite review, exactly one (`resolvedConfig.configFile` being optional) was a shape bug a type system catches. The rest are semantics — what Vite and Node _do_ — and no type system encodes "returning an empty array from `hotUpdate` means send nothing".
 - Hand-written Fable bindings are unverified assertions about someone else's API, and they read as authoritative once written. Consuming Vite's own `.d.ts` means a hook shape change fails the build; a binding just keeps agreeing with itself.
@@ -164,10 +153,10 @@ Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` 
 
 The one argument that survives is dogfooding — a real Vite plugin written in Fable would be genuine exercise for Fable's JS output. That is a project-mission argument rather than an engineering one. Revisit only on those terms.
 
-## 8. Housekeeping (small, can be folded into any of the above)
+## 7. Housekeeping (small, can be folded into any of the above)
 
 - `README.md` still says the package "was merely pushed to reserve the name" and that the project is up for adoption; refresh once direction is settled.
 - Check whether Fable upstream would accept the design-time build cache and dependent-files tracking now living in `ProjectCracking.fs`, so the plugin can shrink further.
 - `ideas.md`: filter diagnostics from `fable_modules` (plugin option) and expose a version property on Fable.Compiler (`Caching.fableCompilerVersion` reads it via reflection today).
 - `Fable.Daemon.Tests/DebugTests.fs` references `../../telplin` and `../../fantomas-tools` checkouts; only the sample-project cases are portable.
-- The JavaScript tests cover the hooks against a stub daemon (`tests/index.test.ts`). Still missing: integration tests driving `createServer` against `sample-project` with the real daemon, and a contract test asserting the daemon's responses still match what `src/daemon.ts` decodes — that second one is the cheap half of item 5.
+- The JavaScript tests cover the hooks against a stub daemon (`tests/index.test.ts`). Still missing: an integration test driving `createServer` against `sample-project` with the real daemon.

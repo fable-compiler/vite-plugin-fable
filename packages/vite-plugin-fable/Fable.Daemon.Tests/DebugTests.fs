@@ -404,3 +404,76 @@ module CacheKeyTests =
         match Caching.canReuseDesignTimeBuildCache (mkKey [ "Some.Plugin" ] false) with
         | Error (Caching.InvalidCacheReason.ExcludeMismatch ([], [ "Some.Plugin" ])) -> Assert.Pass ()
         | other -> Assert.Fail $"expected an Exclude mismatch, got %A{other}"
+
+/// The wire format is the contract with `src/daemon.ts`, and the only way the plugin learns
+/// anything. These serialise with the daemon's own options rather than a copy, and compare against
+/// fixtures the JavaScript tests decode, so renaming or reordering a field fails on both sides
+/// instead of silently changing what an index means.
+module WireTests =
+
+    open System.Text.Json
+
+    let private fixture (name : string) : string =
+        Path.CombineNormalize (__SOURCE_DIRECTORY__, "../tests/fixtures", name)
+
+    /// The repo formatter owns these files and gives them a trailing newline. Neither that nor
+    /// the line endings are part of the contract; the keys, their order and their values are.
+    let private normalize (json : string) : string = json.Replace("\r\n", "\n").TrimEnd '\n'
+
+    let private serialize (value : 'T) : string =
+        let json = JsonSerializer.Serialize<'T>(value, Wire.serializerOptions ())
+        // Round-tripped through JsonDocument so the fixture is formatted, not one long line.
+        use document = JsonDocument.Parse json
+        JsonSerializer.Serialize (document, JsonSerializerOptions (WriteIndented = true))
+
+    let private diagnostic : Diagnostic =
+        {
+            ErrorNumberText = "FS0025"
+            Message = "Incomplete pattern matches on this expression."
+            Range =
+                {
+                    StartLine = 3
+                    StartColumn = 4
+                    EndLine = 3
+                    EndColumn = 9
+                }
+            Severity = "Warning"
+            FileName = "/project/Math.fs"
+        }
+
+    [<Test>]
+    let ``fable/project-changed matches its fixture`` () =
+        let response =
+            ProjectChangedResult.Success (
+                [| "/project/Math.fs" ; "/project/Library.fs" |],
+                [| diagnostic |],
+                [| "/project/App.fsproj" |]
+            )
+
+        Assert.That (
+            normalize (serialize response),
+            Is.EqualTo (normalize (File.ReadAllText (fixture "project-changed.json")))
+        )
+
+    [<Test>]
+    let ``fable/initial-compile matches its fixture`` () =
+        let response =
+            FilesCompiledResult.Success (Map.ofList [ "/project/Math.fs", "export const sum = 1;" ])
+
+        Assert.That (
+            normalize (serialize response),
+            Is.EqualTo (normalize (File.ReadAllText (fixture "initial-compile.json")))
+        )
+
+    [<Test>]
+    let ``fable/compile matches its fixture`` () =
+        let response =
+            FileChangedResult.Success (Map.ofList [ "/project/Math.fs", "export const sum = 2;" ], [| diagnostic |])
+
+        Assert.That (normalize (serialize response), Is.EqualTo (normalize (File.ReadAllText (fixture "compile.json"))))
+
+    [<Test>]
+    let ``a failure matches its fixture`` () =
+        let response = ProjectChangedResult.Error "Could not crack the project."
+
+        Assert.That (normalize (serialize response), Is.EqualTo (normalize (File.ReadAllText (fixture "error.json"))))
