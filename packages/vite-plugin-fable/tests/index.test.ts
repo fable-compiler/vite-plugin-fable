@@ -410,6 +410,34 @@ describe("hotUpdate across environments", () => {
     expect(h.daemon.compileCalls).toHaveLength(1);
   });
 
+  test("compiles once per change when two files change at the same time", async () => {
+    // The watcher does not await `onFileChange`, so two saves interleave: the second file's
+    // change is recorded while the first is still being fanned out to its other environments.
+    // Remembering only the most recent change loses the first one, and its `ssr` call then
+    // compiles it a second time.
+    const h: Harness = harness(
+      {},
+      {
+        sourceFiles: [mathFs, libraryFs],
+        compiled: { [mathFs]: "export const x = 1;", [libraryFs]: "export const y = 2;" },
+      },
+    );
+    await h.start();
+    const math: number = Date.now();
+    const library: number = math + 1;
+
+    await Promise.all([
+      h.hotUpdate(mathFs, "update", { timestamp: math, environment: "client" }),
+      h.hotUpdate(libraryFs, "update", { timestamp: library, environment: "client" }),
+    ]);
+    await h.hotUpdate(mathFs, "update", { timestamp: math, environment: "ssr" });
+    await h.hotUpdate(libraryFs, "update", { timestamp: library, environment: "ssr" });
+
+    // Both files coalesced into one batch, and neither `ssr` call added another.
+    expect(h.daemon.compileCalls).toHaveLength(1);
+    expect(h.daemon.compileCalls[0]).toEqual([mathFs, libraryFs]);
+  });
+
   test("still compiles again for a genuinely new change", async () => {
     const h: Harness = harness({}, project);
     await h.start();
