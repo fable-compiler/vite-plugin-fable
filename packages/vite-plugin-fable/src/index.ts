@@ -2,25 +2,26 @@ import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { normalizePath, transformWithOxc } from "vite";
-import type { HotPayload, Logger, ModuleNode, Plugin, ResolvedConfig } from "vite";
-import { filter, map, bufferTime, Subject } from "rxjs";
+import type {
+  DevEnvironment,
+  EnvironmentModuleNode,
+  HotPayload,
+  Logger,
+  Plugin,
+  ResolvedConfig,
+} from "vite";
 import colors from "picocolors";
-// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/withResolvers
-import withResolvers from "promise.withresolvers";
 import { codeFrameColumns } from "@babel/code-frame";
 import { startDaemon } from "./daemon.js";
 import type {
+  BatchResult,
   DaemonLogger,
   Diagnostic,
   FableDaemon,
-  HookEvent,
-  PendingChangesState,
   PluginOptions,
   PluginState,
   ProjectFileData,
 } from "./types.js";
-
-withResolvers.shim();
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
 if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
@@ -57,12 +58,8 @@ export function createFablePlugin(
     dependentFiles: new Set(),
     logger: { info: console.log, warn: console.warn, error: console.error } as unknown as Logger,
     daemon: null,
-    pendingChanges: null,
-    hotPromiseWithResolvers: null,
     isBuild: false,
   };
-
-  const pendingChangesSubject: Subject<HookEvent> = new Subject<HookEvent>();
 
   function logDebug(prefix: string, message: string): void {
     state.logger.info(colors.dim(`[fable]: ${prefix}: ${message}`), {
@@ -220,45 +217,137 @@ export function createFablePlugin(
   /**
    * F# files part of state.compilableFiles have changed.
    */
-  async function fsharpFileChanged(files: string[]): Promise<Diagnostic[]> {
+  async function fsharpFileChanged(files: string[]): Promise<BatchResult> {
     try {
       const { compiledFiles, diagnostics } = await requireDaemon().compile(files);
 
       logDebug("fsharpFileChanged", `\n${Object.keys(compiledFiles).join("\n")} compiled`);
 
+      // Fable recompiles everything downstream of the edit, but most of that output is byte for
+      // byte what we already served. Reporting it anyway would drag modules that cannot accept a
+      // hot update into the update, and one dead end turns the whole thing into a page reload.
+      const changedFiles: string[] = [];
       for (const [key, value] of Object.entries(compiledFiles)) {
         const normalizedFileName: string = normalizePath(key);
+        if (state.compilableFiles.get(normalizedFileName) !== value) {
+          changedFiles.push(normalizedFileName);
+        }
         state.compilableFiles.set(normalizedFileName, value);
       }
 
       logDiagnostics(diagnostics);
-      return diagnostics;
+      return { diagnostics, changedFiles, projectChanged: false };
     } catch (e) {
       logCritical(
-        "watchChange",
+        "fsharpFileChanged",
         `compilation of ${files} failed, plugin could not handle this gracefully. ${e}`,
       );
-      return [];
+      return { diagnostics: [], changedFiles: [], projectChanged: false };
     }
   }
 
-  function reducePendingChange(acc: PendingChangesState, e: HookEvent): PendingChangesState {
-    if (e.type === "FSharpFileChanged") {
-      return {
-        projectChanged: acc.projectChanged,
-        fsharpFiles: acc.fsharpFiles.add(e.file),
-        projectFiles: acc.projectFiles,
-      };
-    } else if (e.type === "ProjectFileChanged") {
-      return {
-        projectChanged: true,
-        fsharpFiles: acc.fsharpFiles,
-        projectFiles: acc.projectFiles.add(e.file),
-      };
-    } else {
-      logWarn("pendingChanges", `Unexpected pending change ${e}`);
-      return acc;
+  /** How long changes are collected before a compile starts. */
+  const COALESCE_WINDOW_MS: number = 50;
+
+  interface Deferred<T> {
+    promise: Promise<T>;
+    resolve(value: T): void;
+  }
+
+  function deferred<T>(): Deferred<T> {
+    let resolve!: (value: T) => void;
+    const promise: Promise<T> = new Promise<T>((r: (value: T) => void): void => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  /**
+   * One coalescing window's worth of changes.
+   *
+   * Each batch carries its own promise, so a caller always learns the result of the compile its
+   * file actually went into. Sharing one promise across batches meant a file changed during a slow
+   * compile was answered by the previous batch's diagnostics and pushed to the browser before it
+   * had been compiled at all.
+   */
+  interface Batch {
+    fsharpFiles: Set<string>;
+    projectFiles: Set<string>;
+    projectChanged: boolean;
+    settled: Deferred<BatchResult>;
+  }
+
+  let pendingBatch: Batch | null = null;
+  /** Compiles run one at a time; the daemon holds a single project. */
+  let inFlight: Promise<unknown> = Promise.resolve();
+  let addWatchFile: (id: string) => void = (): void => {};
+
+  /** Adds to the open batch, opening one (and its timer) if there is none. */
+  function openBatch(): Batch {
+    if (pendingBatch) return pendingBatch;
+    const batch: Batch = {
+      fsharpFiles: new Set(),
+      projectFiles: new Set(),
+      projectChanged: false,
+      settled: deferred<BatchResult>(),
+    };
+    pendingBatch = batch;
+    setTimeout((): void => {
+      if (pendingBatch === batch) pendingBatch = null;
+      inFlight = inFlight.then((): Promise<void> => runBatch(batch));
+    }, COALESCE_WINDOW_MS);
+    return batch;
+  }
+
+  async function runBatch(batch: Batch): Promise<void> {
+    const result: BatchResult = {
+      diagnostics: [],
+      changedFiles: [],
+      projectChanged: batch.projectChanged,
+    };
+    try {
+      if (batch.projectChanged) {
+        await projectChanged(addWatchFile, batch.projectFiles);
+      } else {
+        const files: string[] = Array.from(batch.fsharpFiles);
+        logDebug("runBatch", files.join("\n"));
+        const compiled: BatchResult = await fsharpFileChanged(files);
+        result.diagnostics = compiled.diagnostics;
+        result.changedFiles = compiled.changedFiles;
+      }
+    } finally {
+      batch.settled.resolve(result);
     }
+  }
+
+  /** Queues an F# source change and resolves with the batch it lands in. */
+  function queueSourceChange(file: string): Promise<BatchResult> {
+    const batch: Batch = openBatch();
+    batch.fsharpFiles.add(file);
+    return batch.settled.promise;
+  }
+
+  /** Queues a full re-crack and resolves with the batch it lands in. */
+  function queueProjectChange(file: string): Promise<BatchResult> {
+    const batch: Batch = openBatch();
+    batch.projectChanged = true;
+    batch.projectFiles.add(file);
+    return batch.settled.promise;
+  }
+
+  /**
+   * Maps a changed path to the source file the plugin knows about, or `null` if it is not ours.
+   * A `.fsi` maps to itself for compilation — the daemon walks signature to implementation — but
+   * the browser imports the `.fs`, so module lookup uses {@link implementationOf}.
+   */
+  function toSourceFile(file: string): string | null {
+    const normalized: string = normalizePath(file);
+    return state.sourceFiles.has(normalized) ? normalized : null;
+  }
+
+  /** `Foo.fsi` describes the module the browser loads as `Foo.fs`. */
+  function implementationOf(file: string): string {
+    return file.endsWith(".fsi") ? `${file.slice(0, -4)}.fs` : file;
   }
 
   function requireDaemon(): FableDaemon {
@@ -333,6 +422,7 @@ export function createFablePlugin(
     },
     buildStart: async function () {
       try {
+        addWatchFile = this.addWatchFile.bind(this);
         logInfo("buildStart", "Starting daemon");
         state.daemon = createDaemon({
           info: (message: string): void => logInfo("daemon", message),
@@ -341,47 +431,10 @@ export function createFablePlugin(
         process.once("SIGINT", onSigint);
 
         if (state.isBuild) {
-          await projectChanged(this.addWatchFile.bind(this), new Set([state.fsproj]));
+          await projectChanged(addWatchFile, new Set([state.fsproj]));
         } else {
-          state.pendingChanges = pendingChangesSubject
-            .pipe(
-              bufferTime(50),
-              map((events: HookEvent[]): PendingChangesState => {
-                return events.reduce(reducePendingChange, {
-                  projectChanged: false,
-                  fsharpFiles: new Set<string>(),
-                  projectFiles: new Set<string>(),
-                });
-              }),
-              filter(
-                (pending: PendingChangesState): boolean =>
-                  pending.projectChanged || pending.fsharpFiles.size > 0,
-              ),
-            )
-            .subscribe(async (pendingChanges: PendingChangesState): Promise<void> => {
-              let diagnostics: Diagnostic[] = [];
-
-              if (pendingChanges.projectChanged) {
-                await projectChanged(this.addWatchFile.bind(this), pendingChanges.projectFiles);
-              } else {
-                const files: string[] = Array.from(pendingChanges.fsharpFiles);
-                logDebug("subscribe", files.join("\n"));
-                diagnostics = await fsharpFileChanged(files);
-              }
-
-              if (state.hotPromiseWithResolvers) {
-                state.hotPromiseWithResolvers.resolve(diagnostics);
-                state.hotPromiseWithResolvers = null;
-              }
-            });
-
-          logDebug("buildStart", "Initial project file change!");
-          state.hotPromiseWithResolvers = Promise.withResolvers<Diagnostic[]>();
-          pendingChangesSubject.next({
-            type: "ProjectFileChanged",
-            file: state.fsproj,
-          });
-          await state.hotPromiseWithResolvers.promise;
+          logDebug("buildStart", "Initial project crack");
+          await queueProjectChange(state.fsproj);
         }
       } catch (e) {
         logCritical("buildStart", `Unexpected failure during buildStart: ${e}`);
@@ -420,51 +473,74 @@ export function createFablePlugin(
         }
       },
     },
-    watchChange: async function (id) {
-      if (state.sourceFiles.size !== 0 && state.dependentFiles.has(id)) {
-        pendingChangesSubject.next({ type: "ProjectFileChanged", file: id });
+    // `hotUpdate` covers dev; this is what reaches the plugin under `vite build --watch`.
+    watchChange: async function (id: string): Promise<void> {
+      if (state.sourceFiles.size !== 0 && state.dependentFiles.has(normalizePath(id))) {
+        await queueProjectChange(normalizePath(id));
       }
     },
-    handleHotUpdate: async function ({ file, server, modules }): Promise<ModuleNode[] | void> {
-      if (state.compilableFiles.has(file)) {
-        logDebug("handleHotUpdate", `enter for ${file}`);
-        pendingChangesSubject.next({
-          type: "FSharpFileChanged",
-          file: file,
-        });
+    hotUpdate: async function ({ type, file, modules }): Promise<EnvironmentModuleNode[] | void> {
+      const environment: DevEnvironment = this.environment;
+      const normalized: string = normalizePath(file);
 
-        // handleHotUpdate could be called concurrently because multiple files changed.
-        if (!state.hotPromiseWithResolvers) {
-          state.hotPromiseWithResolvers = Promise.withResolvers<Diagnostic[]>();
-        }
+      // An MSBuild input changed: re-crack, then reload, because the module graph cannot express
+      // "the whole project was rebuilt".
+      if (state.dependentFiles.has(normalized)) {
+        logDebug("hotUpdate", `project file ${normalized} changed`);
+        await queueProjectChange(normalized);
+        environment.hot.send({ type: "full-reload" });
+        return [];
+      }
 
-        // The idea is to wait for a shared promise to resolve.
-        // This will resolve in the subscription of state.changedFSharpFiles
-        const diagnostics: Diagnostic[] = await state.hotPromiseWithResolvers.promise;
-        logDebug("handleHotUpdate", `leave for ${file}`);
+      const sourceFile: string | null = toSourceFile(normalized);
 
-        const errorDiagnostic: Diagnostic | undefined = diagnostics.find(
-          (diag: Diagnostic): boolean => diag.severity === "Error",
-        );
-        if (errorDiagnostic) {
-          const msg: HotPayload = await makeHmrError(errorDiagnostic);
-          server.hot.send(msg);
-          return [];
-        } else {
-          // Potentially a file that is not imported in the current graph was changed.
-          // Vite should not try and hot update that module.
-          return modules.filter((m: ModuleNode): boolean => m.importers.size !== 0);
+      // A file appearing or disappearing changes the compilation order, which only a re-crack
+      // can establish. F# projects list their files, so this usually rides along with the fsproj.
+      if (type !== "update") {
+        if (!sourceFile && !fsharpFileRegex.test(normalized)) return;
+        logDebug("hotUpdate", `${normalized} was ${type}d, re-cracking`);
+        await queueProjectChange(normalized);
+        environment.hot.send({ type: "full-reload" });
+        return [];
+      }
+
+      if (!sourceFile) return;
+
+      logDebug("hotUpdate", `enter for ${sourceFile}`);
+      const result: BatchResult = await queueSourceChange(sourceFile);
+      logDebug("hotUpdate", `leave for ${sourceFile}`);
+
+      const errorDiagnostic: Diagnostic | undefined = result.diagnostics.find(
+        (diag: Diagnostic): boolean => diag.severity.toLowerCase() === "error",
+      );
+      if (errorDiagnostic) {
+        environment.hot.send(await makeHmrError(errorDiagnostic));
+        return [];
+      }
+
+      if (result.projectChanged) {
+        environment.hot.send({ type: "full-reload" });
+        return [];
+      }
+
+      // Every module whose output actually changed, not just the edited file: one edit can change
+      // what Fable emits for the files downstream of it.
+      const updated: Set<EnvironmentModuleNode> = new Set(modules);
+      for (const changed of result.changedFiles) {
+        for (const mod of environment.moduleGraph.getModulesByFile(implementationOf(changed)) ??
+          []) {
+          updated.add(mod);
         }
       }
+      // Returning an empty array tells Vite "handled, do nothing", which would silently skip a
+      // module nothing imports. Leaving it undefined lets Vite propagate and full-reload instead.
+      return updated.size > 0 ? Array.from(updated) : undefined;
     },
     buildEnd: () => {
       logInfo("buildEnd", "Closing daemon");
       process.off("SIGINT", onSigint);
       state.daemon?.dispose();
       state.daemon = null;
-      if (state.pendingChanges) {
-        state.pendingChanges.unsubscribe();
-      }
     },
   };
 }

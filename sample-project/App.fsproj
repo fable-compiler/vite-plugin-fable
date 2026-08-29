@@ -16,6 +16,8 @@
 
     <ItemGroup>
         <Compile Include="Math.fs" />
+        <Compile Include="Greeting.fsi" />
+        <Compile Include="Greeting.fs" />
         <Compile Include="Component.fsi" />
         <Compile Include="Component.fs" />
         <Compile Include="Library.fs" />
