@@ -13,12 +13,19 @@ its cross-references (`item N`) correct when renumbering.
 
 ## Check Vite and Fable behaviour against the source, not from memory
 
-Both are checked out locally and match what this repo builds against:
+Both are often checked out as **siblings of this repo**, so `../vite` and `../Fable` resolve from
+the repo root. That is a local convention rather than a guarantee — a fresh clone or CI will not
+have them. Test for the directory before relying on it, and if it is missing, say so rather than
+answering from memory.
 
-- `~/Projects/vite` — the exact version in the workspace catalog. `packages/vite/src/node` answers
+When they are there, consult them freely; it is the fastest way to settle a question about someone
+else's contract:
+
+- `../vite` — the exact version in the workspace catalog. `packages/vite/src/node` answers
   hook-contract questions definitively. Several plugin bugs were misdiagnosed from assumptions
-  about Vite that the source contradicted.
-- `~/Projects/Fable` — Fable 5.14. Notably `src/Fable.Compiler/Library.fs`, where
+  about Vite that the source contradicted, and several fixes in the git history cite line numbers
+  from it.
+- `../Fable` — Fable 5.14. Notably `src/Fable.Compiler/Library.fs`, where
   `FileWriter.AddSourceMapping` is a no-op, so `CliArgs.SourceMaps` does nothing.
 
 ## Seeing what the plugin actually emitted, without a browser
