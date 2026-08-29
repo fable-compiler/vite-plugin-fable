@@ -18,8 +18,9 @@ const daemonAssembly: string = path.join(currentDir, "..", "bin", "Fable.Daemon.
 
 /**
  * A discriminated union case as it arrives over JSON-RPC. The wire format is positional: `fields`
- * mirrors the declaration order of the F# case. Private to this module so the rest of the plugin
- * never indexes into it — see roadmap item 6.
+ * mirrors the declaration order of the F# case, so reordering the fields of a case in `Types.fs`
+ * changes what every index below means, with no compile error on either side. Private to this
+ * module so that hazard stays in one file rather than spreading to every caller.
  */
 interface FSharpDiscriminatedUnion {
   case: string;

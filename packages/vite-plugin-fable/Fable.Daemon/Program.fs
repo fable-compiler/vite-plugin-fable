@@ -126,6 +126,11 @@ let tryTypeCheckProject
                         Configuration = payload.Configuration
                         // Fable's MSBuildCrackerResolver only adds `/restore` to the design time build when this is false.
                         NoRestore = false
+                        // Fable's own cache, off because the daemon keeps its own (`Caching.fs`).
+                        // Upstream this flag only decides whether `CacheInfo` is read and written,
+                        // and whether `fable_modules` is deleted wholesale, and that delete is
+                        // guarded by `evaluateOnly` below. Nothing else reads it, so it costs no
+                        // correctness to turn Fable's caching off here.
                         NoCache = true
                         NoGitignore = true
                         NoParallelTypeCheck = false
@@ -151,7 +156,11 @@ let tryTypeCheckProject
                         Verbosity = Verbosity.Verbose
                     }
 
-                cliArgs, CrackerOptions (cliArgs, true)
+                // `evaluateOnly` is what stops `CrackerOptions` deleting the whole
+                // `fable_modules` directory on construction, which it does when `NoCache` is set.
+                // Named rather than a bare `true`, because that is a lot to hang on an unlabelled
+                // boolean.
+                cliArgs, CrackerOptions (cliArgs, evaluateOnly = true)
 
             // Which files the MSBuild evaluation depends on is decided by the evaluation, so the
             // keys from the previous crack describe the project as it was. Adding a
