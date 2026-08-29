@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The sample project gained a `Greeting.fsi` / `Greeting.fs` pair whose output is rendered into the page heading, so signature-file behaviour can be exercised by hand: editing the implementation updates the heading in place, and breaking the signature surfaces the error against the implementation.
+- Hot updates use Vite's `hotUpdate` hook instead of the deprecated `handleHotUpdate`, which also means created and deleted files now reach the plugin — `handleHotUpdate` only ever fired for updates.
+- Fixed a hot-update race. Every in-flight change shared one promise, so a file edited while another was compiling was answered by the previous compile's diagnostics and pushed to the browser before it had been compiled at all; its own diagnostics were then discarded. Changes are now coalesced into batches that each carry their own result.
+- Editing a signature file (`.fsi`) recompiles the implementation it describes. Previously nothing happened at all until an implementation file was touched.
+- Editing an `.fsproj` or other MSBuild input now reloads the browser after the project is re-cracked, rather than re-cracking silently and leaving stale modules loaded.
+- A changed F# file that nothing imports now triggers a reload instead of being silently ignored, and every module whose compiled output actually changed is invalidated rather than only the edited file. Files Fable recompiled without changing their output are left out: they are usually downstream modules that cannot accept a hot update, and one of those turns the whole update into a page reload. Editing an F# React component now hot-updates through Fast Refresh instead of reloading the page.
+- `rxjs` and `promise.withresolvers` are no longer dependencies; the coalescing is a small queue.
 - `vite build` now fails when F# does. A cracking or compile failure, or any error-severity diagnostic, aborts the build instead of logging and exiting 0 with broken output; an F# file Fable never compiled is reported rather than handed to the JavaScript parser as raw F#. `vite dev` is unchanged: the server stays up so the browser overlay can show the diagnostic.
 - Plugin errors are logged through Vite's `logger.error` rather than `logger.warn`.
 - oxlint runs over the repository, with `@nojaf/oxlint-plugin-annotate-non-primitives` requiring an explicit type annotation wherever the type is not obvious from the initializer. Every `lint` script runs oxlint before the TypeScript checks, and CI runs them on every PR.

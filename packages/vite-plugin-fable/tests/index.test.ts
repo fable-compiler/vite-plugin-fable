@@ -53,6 +53,13 @@ interface HotServerStub {
   hot: { send(payload?: unknown): unknown };
 }
 
+/** Records what the plugin pushes to the browser, and what the module graph holds. */
+interface EnvironmentStub {
+  hot: { send(payload?: unknown): unknown };
+  moduleGraph: { getModulesByFile(file: string): Set<HotModule> | undefined };
+  sent: unknown[];
+}
+
 type TransformOutput = { code: string; map: null } | undefined;
 
 interface Harness {
@@ -63,6 +70,12 @@ interface Harness {
   start(config?: ResolvedConfig): Promise<void>;
   /** Calls the `transform` hook the way Vite's plugin container does. */
   transform(id: string): Promise<TransformOutput>;
+  /** Calls `hotUpdate` the way Vite's HMR pipeline does. */
+  hotUpdate(file: string, type?: "create" | "update" | "delete"): Promise<HotModule[] | void>;
+  /** Payloads the plugin pushed to the browser. */
+  sent: unknown[];
+  /** Modules the environment's graph will report per file. */
+  graph: Map<string, HotModule>;
 }
 
 function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}): Harness {
@@ -82,10 +95,47 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
     },
   };
 
+  const graph: Map<string, HotModule> = new Map();
+  const sent: unknown[] = [];
+  const environment: EnvironmentStub = {
+    hot: {
+      send: (payload?: unknown): unknown => {
+        sent.push(payload);
+        return undefined;
+      },
+    },
+    moduleGraph: {
+      getModulesByFile: (file: string): Set<HotModule> | undefined => {
+        const mod: HotModule | undefined = graph.get(file);
+        return mod ? new Set([mod]) : undefined;
+      },
+    },
+    sent,
+  };
+
   return {
     plugin,
     daemon,
     watched,
+    sent,
+    graph,
+    async hotUpdate(
+      file: string,
+      type: "create" | "update" | "delete" = "update",
+    ): Promise<HotModule[] | void> {
+      const modules: HotModule[] = graph.has(file) ? [graph.get(file)!] : [];
+      return (plugin.hotUpdate as any).call(
+        { environment },
+        {
+          type,
+          file,
+          timestamp: Date.now(),
+          modules,
+          read: async (): Promise<string> => "",
+          server: { environments: { client: environment } },
+        },
+      );
+    },
     async start(config = resolvedConfig()) {
       await (plugin.configResolved as any).call(context, config);
       await (plugin.buildStart as any).call(context, {});
@@ -242,65 +292,49 @@ describe("transform", () => {
 });
 
 describe("hot updates", () => {
+  /** A module node as Vite's graph would hold it, with `importers` deciding HMR propagation. */
+  function moduleFor(file: string, importers: number = 1): HotModule {
+    return { id: file, importers: new Set(Array.from({ length: importers }, (): object => ({}))) };
+  }
+
   test("recompiles a changed F# file and refreshes its output", async () => {
     const h: Harness = harness(
       {},
-      { sourceFiles: [mathFs], compiled: { [mathFs]: "export const v = 1;" } },
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "const v = 1;" } },
     );
     await h.start();
+    h.graph.set(mathFs, moduleFor(mathFs));
 
-    h.daemon.setCompileResult({ [mathFs]: "export const v = 2;" });
-    const modules: HotModule[] = [{ id: mathFs, importers: new Set([{}]) }];
-    await (h.plugin.handleHotUpdate as any).call(
-      {},
-      { file: mathFs, server: { hot: { send: () => {} } }, modules },
-    );
+    h.daemon.setCompileResult({ [mathFs]: "const v = 2;" });
+    await h.hotUpdate(mathFs);
 
     expect(h.daemon.compileCalls).toEqual([[mathFs]]);
-    expect((await h.transform(mathFs))?.code).toBe("export const v = 2;");
+    expect((await h.transform(mathFs))?.code).toBe("const v = 2;");
   });
 
   test("ignores files that are not part of the project", async () => {
     const h: Harness = harness(
       {},
-      { sourceFiles: [mathFs], compiled: { [mathFs]: "export const v = 1;" } },
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "const v = 1;" } },
     );
     await h.start();
-    await (h.plugin.handleHotUpdate as any).call(
-      {},
-      { file: `${sampleProject}/README.md`, server: { hot: { send: () => {} } }, modules: [] },
-    );
+    await h.hotUpdate(`${sampleProject}/README.md`);
     expect(h.daemon.compileCalls).toHaveLength(0);
   });
 
   test("sends an overlay error and no update when compilation fails", async () => {
     const h: Harness = harness(
       {},
-      { sourceFiles: [mathFs], compiled: { [mathFs]: "export const v = 1;" } },
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "const v = 1;" } },
     );
     await h.start();
+    h.graph.set(mathFs, moduleFor(mathFs));
+    h.daemon.setCompileResult({}, [errorAt(mathFs)]);
 
-    const diagnostic: Diagnostic = {
-      errorNumberText: "FS0001",
-      message: "This expression was expected to have type int",
-      range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 5 },
-      severity: "Error",
-      fileName: mathFs,
-    };
-    h.daemon.setCompileResult({}, [diagnostic]);
+    const result: HotModule[] | void = await h.hotUpdate(mathFs);
 
-    const sent: any[] = [];
-    const result: unknown = await (h.plugin.handleHotUpdate as any).call(
-      {},
-      {
-        file: mathFs,
-        server: { hot: { send: (payload: any): number => sent.push(payload) } },
-        modules: [{ id: mathFs, importers: new Set([{}]) }],
-      },
-    );
-
-    expect(sent[0].type).toBe("error");
-    expect(sent[0].err.message).toBe(diagnostic.message);
+    expect((h.sent[0] as any).type).toBe("error");
+    expect((h.sent[0] as any).err.message).toBe(errorAt(mathFs).message);
     expect(result).toEqual([]);
   });
 
@@ -309,43 +343,138 @@ describe("hot updates", () => {
       {},
       {
         sourceFiles: [mathFs, libraryFs],
-        compiled: { [mathFs]: "export const v = 1;", [libraryFs]: "export const w = 1;" },
+        compiled: { [mathFs]: "const v = 1;", [libraryFs]: "const w = 1;" },
       },
     );
     await h.start();
+    h.graph.set(mathFs, moduleFor(mathFs));
+    h.graph.set(libraryFs, moduleFor(libraryFs));
 
-    const server: HotServerStub = { hot: { send: (): void => {} } };
-    await Promise.all([
-      (h.plugin.handleHotUpdate as any).call(
-        {},
-        { file: mathFs, server, modules: [{ id: mathFs, importers: new Set([{}]) }] },
-      ),
-      (h.plugin.handleHotUpdate as any).call(
-        {},
-        { file: libraryFs, server, modules: [{ id: libraryFs, importers: new Set([{}]) }] },
-      ),
-    ]);
+    await Promise.all([h.hotUpdate(mathFs), h.hotUpdate(libraryFs)]);
 
     expect(h.daemon.compileCalls).toHaveLength(1);
-    expect(h.daemon.compileCalls[0].sort()).toEqual([libraryFs, mathFs].sort());
+    expect(h.daemon.compileCalls[0].toSorted()).toEqual([libraryFs, mathFs].toSorted());
   });
-});
 
-describe("watchChange", () => {
-  test("re-cracks the project when an MSBuild dependency changes", async () => {
+  test("a change arriving mid-compile is not answered by the in-flight batch", async () => {
+    const h: Harness = harness(
+      {},
+      {
+        sourceFiles: [mathFs, libraryFs],
+        compiled: { [mathFs]: "const v = 1;", [libraryFs]: "const w = 1;" },
+      },
+    );
+    await h.start();
+    h.graph.set(mathFs, moduleFor(mathFs));
+    h.graph.set(libraryFs, moduleFor(libraryFs));
+
+    // Math.fs compiles slowly; Library.fs changes while that is still running.
+    h.daemon.setCompileResult({ [mathFs]: "const v = 2;" });
+    const releaseMath: () => void = h.daemon.blockNextCompile();
+    const mathUpdate: Promise<HotModule[] | void> = h.hotUpdate(mathFs);
+
+    await afterCoalescing();
+    h.daemon.setCompileResult({ [libraryFs]: "const w = 2;" });
+    const libraryUpdate: Promise<HotModule[] | void> = h.hotUpdate(libraryFs);
+
+    releaseMath();
+    await Promise.all([mathUpdate, libraryUpdate]);
+
+    // Each file was compiled by its own batch, and Library.fs really did get compiled.
+    expect(h.daemon.compileCalls).toEqual([[mathFs], [libraryFs]]);
+    expect((await h.transform(libraryFs))?.code).toBe("const w = 2;");
+  });
+
+  test("still updates a module nothing imports, rather than doing nothing", async () => {
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "const v = 1;" } },
+    );
+    await h.start();
+    h.graph.set(mathFs, moduleFor(mathFs, 0));
+
+    h.daemon.setCompileResult({ [mathFs]: "const v = 2;" });
+    const result: HotModule[] | void = await h.hotUpdate(mathFs);
+
+    // Returning [] would make Vite log "no modules matched" and send nothing at all.
+    expect(result).not.toEqual([]);
+  });
+
+  test("invalidates every module whose output changed, not just the edited file", async () => {
+    const h: Harness = harness(
+      {},
+      {
+        sourceFiles: [mathFs, libraryFs],
+        compiled: { [mathFs]: "const v = 1;", [libraryFs]: "const w = 1;" },
+      },
+    );
+    await h.start();
+    h.graph.set(mathFs, moduleFor(mathFs));
+    h.graph.set(libraryFs, moduleFor(libraryFs));
+
+    // Editing Math.fs changes the output of Library.fs too.
+    h.daemon.setCompileResult({ [mathFs]: "const v = 2;", [libraryFs]: "const w = 2;" });
+    const result: HotModule[] | void = await h.hotUpdate(mathFs);
+
+    expect((result as HotModule[]).map((m: HotModule): string => m.id).toSorted()).toEqual(
+      [libraryFs, mathFs].toSorted(),
+    );
+  });
+
+  test("leaves modules alone when recompiling did not change their output", async () => {
+    const h: Harness = harness(
+      {},
+      {
+        sourceFiles: [mathFs, libraryFs],
+        compiled: { [mathFs]: "const v = 1;", [libraryFs]: "const w = 1;" },
+      },
+    );
+    await h.start();
+    h.graph.set(mathFs, moduleFor(mathFs));
+    h.graph.set(libraryFs, moduleFor(libraryFs));
+
+    // Fable returns Library.fs because it sits downstream, but its output is unchanged. Pulling it
+    // into the update would drag a module that cannot accept one into the picture.
+    h.daemon.setCompileResult({ [mathFs]: "const v = 2;", [libraryFs]: "const w = 1;" });
+    const result: HotModule[] | void = await h.hotUpdate(mathFs);
+
+    expect((result as HotModule[]).map((m: HotModule): string => m.id)).toEqual([mathFs]);
+  });
+
+  test("recompiles the implementation file when a signature file changes", async () => {
+    const componentFsi = `${sampleProject}/Component.fsi`;
+    const componentFs = `${sampleProject}/Component.fs`;
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [componentFs, componentFsi], compiled: { [componentFs]: "const c = 1;" } },
+    );
+    await h.start();
+    h.graph.set(componentFs, moduleFor(componentFs));
+
+    h.daemon.setCompileResult({ [componentFs]: "const c = 2;" });
+    await h.hotUpdate(componentFsi);
+
+    expect(h.daemon.compileCalls).toEqual([[componentFsi]]);
+    expect((await h.transform(componentFs))?.code).toBe("const c = 2;");
+  });
+
+  test("re-cracks the project and reloads when an MSBuild dependency changes", async () => {
     const h: Harness = harness({}, { sourceFiles: [mathFs], dependentFiles: [appFsproj] });
     await h.start();
-    await (h.plugin.watchChange as any).call({}, appFsproj, { event: "update" });
-    await afterCoalescing();
+
+    await h.hotUpdate(appFsproj);
+
     expect(h.daemon.projectChangedCalls).toHaveLength(2);
+    expect(h.sent).toContainEqual({ type: "full-reload" });
   });
 
-  test("ignores changes to files it does not track", async () => {
+  test("re-cracks the project when an F# file is added or removed", async () => {
     const h: Harness = harness({}, { sourceFiles: [mathFs], dependentFiles: [appFsproj] });
     await h.start();
-    await (h.plugin.watchChange as any).call({}, `${sampleProject}/README.md`, { event: "update" });
-    await afterCoalescing();
-    expect(h.daemon.projectChangedCalls).toHaveLength(1);
+
+    await h.hotUpdate(`${sampleProject}/New.fs`, "create");
+
+    expect(h.daemon.projectChangedCalls).toHaveLength(2);
   });
 });
 

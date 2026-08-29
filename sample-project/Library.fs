@@ -11,7 +11,9 @@ let someJsonString =
     Encode.object [ "track", Encode.string "Changes" ] |> Encode.toString 4
 
 let h1Element = document.querySelector "h1"
-h1Element.textContent <- $"Dynamic Fable text %i{r}! %s{someJsonString}"
+let greeting = Greeting.greet "F#"
+
+h1Element.textContent <- $"%s{greeting} — dynamic Fable text %i{r}! %s{someJsonString}"
 
 open React
 

@@ -32,7 +32,11 @@ export interface StubDaemon extends FableDaemon {
   readonly compileCalls: string[][];
   /** How many times `dispose` ran. */
   readonly disposeCalls: number;
-  /** Result of the next `compile`, keyed by source path. */
+  /**
+   * What the next `compile` returns, keyed by source path. The real daemon answers with every file
+   * it recompiled, which includes files downstream of the one that changed — not just the files it
+   * was asked about.
+   */
   setCompileResult(compiled: Record<string, string>, diagnostics?: Diagnostic[]): void;
   /** Make every subsequent call reject, as a dead daemon would. */
   failWith(error: Error): void;
@@ -50,7 +54,8 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
   let disposeCalls = 0;
   let failure: Error | null = null;
   let blocked: Promise<void> | null = null;
-  let compiled: Record<string, string> = options.compiled ?? {};
+  const compiled: Record<string, string> = options.compiled ?? {};
+  let nextCompile: Record<string, string> | null = null;
   let compileDiagnostics: Diagnostic[] = [];
 
   function guard(): void {
@@ -72,7 +77,7 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
     },
 
     setCompileResult(next: Record<string, string>, diagnostics: Diagnostic[] = []): void {
-      compiled = next;
+      nextCompile = next;
       compileDiagnostics = diagnostics;
     },
 
@@ -107,16 +112,27 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
     async compile(files: string[]): Promise<CompileResult> {
       guard();
       compileCalls.push(files);
+
+      // Decide the answer when the call arrives, not when it resolves: a blocked compile must not
+      // pick up a result queued for the compile that came after it.
+      let compiledFiles: Record<string, string>;
+      if (nextCompile) {
+        compiledFiles = nextCompile;
+        nextCompile = null;
+      } else {
+        compiledFiles = {};
+        for (const file of files) {
+          if (compiled[file] !== undefined) compiledFiles[file] = compiled[file];
+        }
+      }
+      const diagnostics: Diagnostic[] = compileDiagnostics;
+
       if (blocked) {
         const gate: Promise<void> = blocked;
         blocked = null;
         await gate;
       }
-      const compiledFiles: Record<string, string> = {};
-      for (const file of files) {
-        if (compiled[file] !== undefined) compiledFiles[file] = compiled[file];
-      }
-      return { compiledFiles, diagnostics: compileDiagnostics };
+      return { compiledFiles, diagnostics };
     },
 
     dispose(): void {

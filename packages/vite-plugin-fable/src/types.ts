@@ -1,5 +1,4 @@
 import type { Logger } from "vite";
-import type { Subscription } from "rxjs";
 
 /** Options for an F# project. */
 export interface FSharpProjectOptions {
@@ -69,39 +68,18 @@ export interface PluginState {
   configuration: string;
   /** MSBuild files that trigger a full re-crack when changed. */
   dependentFiles: Set<string>;
-  /** Subscription draining the pending-change queue during dev. */
-  pendingChanges: Subscription | null;
-  /** Shared between concurrent hot updates so they await a single compile. */
-  hotPromiseWithResolvers: PromiseWithResolvers<Diagnostic[]> | null;
   /** Whether Vite was invoked with `build` rather than `serve`. */
   isBuild: boolean;
 }
 
-/** An F# implementation or signature file changed. */
-export interface FSharpFileChanged {
-  type: "FSharpFileChanged";
-  /** The F# file that changed. */
-  file: string;
-}
-
-/** A project file or one of its MSBuild dependencies changed. */
-export interface ProjectFileChanged {
-  type: "ProjectFileChanged";
-  /** The project file that changed. */
-  file: string;
-}
-
-/** The events the Vite hooks push onto the pending-change queue. */
-export type HookEvent = FSharpFileChanged | ProjectFileChanged;
-
-/** One buffered window of {@link HookEvent}s, reduced into the work it implies. */
-export interface PendingChangesState {
-  /** Whether a full re-crack is needed. */
+/** What one coalesced batch of file changes produced. */
+export interface BatchResult {
+  /** Diagnostics from the compile, empty when the project was re-cracked instead. */
+  diagnostics: Diagnostic[];
+  /** Source files whose compiled output this batch replaced. */
+  changedFiles: string[];
+  /** Whether the batch re-cracked the project rather than compiling files. */
   projectChanged: boolean;
-  /** The F# files to recompile. */
-  fsharpFiles: Set<string>;
-  /** The project files that triggered {@link PendingChangesState.projectChanged}. */
-  projectFiles: Set<string>;
 }
 
 /** The result of a `fable/project-changed` request. */

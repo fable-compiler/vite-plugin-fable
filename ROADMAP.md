@@ -2,58 +2,11 @@
 
 Captured on 2026-08-29 after a scan of the code base, trimmed as items land. Each item has enough context to be picked up independently.
 
-Items 1-4 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
+Items 1-3 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
 
-Order is a rough suggestion: 1 is a confirmed bug, 2-4 are smaller contract fixes and design questions, 5-8 are larger. Item 9 records a decision rather than work.
+Order is a rough suggestion: 1-3 are contract fixes and design questions, 4-7 are larger. Item 8 records a decision rather than work.
 
-## 1. Migrate `handleHotUpdate` → `hotUpdate` and fix the HMR pipeline
-
-The single biggest cluster. `handleHotUpdate` is on Vite's future-deprecation list (`removePluginHookHandleHotUpdate`, `src/node/deprecations.ts:22`, warning emitted at `src/node/server/hmr.ts:546`) and it is functionally narrower: `hmr.ts:545` only dispatches it for `type === 'update'`, so **created and deleted `.fs` files never reach the plugin**. `hotUpdate` receives all three and gives `this.environment.hot`, which also settles the `server.hot` deprecation (`removeServerHot`, `deprecations.ts:31`).
-
-Everything below wants to be fixed in the same pass.
-
-**a. The shared HMR promise mixes up unrelated compile batches** (`index.js:416-419`, `475-481`)
-
-There is one `state.hotPromiseWithResolvers` for all in-flight changes, but a compile is not instant. Edit `A.fs`: the buffer flushes at t=50ms, the compile runs to t=2s. Edit `B.fs` at t=100ms: `handleHotUpdate(B)` finds a non-null promise and awaits _A's_, which resolves at t=2s carrying _A's_ diagnostics. `B` is then reported as updatable and pushed to the browser before its own compile has written to `compilableFiles`, so the client refetches `B` and gets the previous code. B's own batch finishes afterwards, finds `hotPromiseWithResolvers === null`, and drops its diagnostics — errors in `B` are silently lost.
-
-The promise has to be per-batch, keyed to the files that actually went into that compile.
-
-**b. Returning an empty array disables HMR for the entry module** (`index.js:493`)
-
-`modules.filter(m => m.importers.size !== 0)` returns `[]` for the root `.fs` (the one the `<script>` in `index.html` pulls in — the HTML is not an importer in the module graph). Confirmed at `hmr.ts:632-652`: an empty module list logs `[no modules matched]` and sends **nothing**; full-reload is only sent for `.html`. So editing the entry F# file does nothing at all. Returning `undefined` lets Vite propagate, hit a dead end (Fable output never calls `import.meta.hot.accept`) and full-reload correctly.
-
-**c. An fsproj change never reaches the browser** (`index.js:461-465`)
-
-`watchChange` fires-and-forgets into the subject. Vite awaits `watchChange` and then calls `handleHMRUpdate` (`server/index.ts:945-956`), but the fsproj has no modules in the graph and `handleHotUpdate` bails because `compilableFiles.has(fsproj)` is false. The re-crack happens in the background and nothing invalidates the module graph. Needs an explicit full-reload (or `environment.moduleGraph.invalidateAll()`) once `projectChanged` resolves.
-
-**d. Signature files (`.fsi`) are not handled**
-
-Editing a `.fsi` does nothing today:
-
-1. `compileProject` calls `addWatchFile` for every source file including `.fsi`, so Vite does see the change.
-2. `watchChange` only forwards files in `state.dependentFiles` (MSBuild files), so the `.fsi` is ignored there.
-3. `handleHotUpdate` only forwards files in `state.compilableFiles`, and `tryCompileProject` (`Program.fs`) filters out `.fsi` files, so a signature file is never a key.
-4. No recompile is requested, no diagnostic is shown, and the browser keeps stale output until an implementation file is touched.
-
-The daemon already anticipates this: `tryCompileFiles` has `mapLeadingFile`, which maps `Foo.fs` to `Foo.fsi` before asking `InteractiveChecker.GetDependentFiles`, so once the plugin forwards the change the dependency walk works.
-
-**e. Downstream modules are not invalidated**
-
-When a dependent file recompiles several F# files, only the originally changed module is in `modules`, so downstream files whose _output_ changed are never invalidated. Verify with a change in `Math.fs` that alters the output of `Library.fs`.
-
-**To do**
-
-- [ ] Replace `handleHotUpdate` with `hotUpdate`; use `this.environment.hot` instead of `server.hot`.
-- [ ] Make the pending-change coalescing per-batch. Since this is a rewrite anyway, the RxJS `Subject` + `bufferTime(50)` + `Promise.withResolvers` dance can become a small queue with one in-flight promise, dropping `rxjs` and the `promise.withresolvers` shim (Node 22 has `Promise.withResolvers` natively).
-- [ ] Handle `create` and `delete`, not just `update`.
-- [ ] Treat any file in `state.sourceFiles` as an F# change, not only keys of `compilableFiles`; map a changed `Foo.fsi` to its `Foo.fs` for the module lookup (the browser imports the `.fs`).
-- [ ] Return `undefined` rather than `[]` when there is nothing to filter, so entry modules full-reload.
-- [ ] Trigger a full reload after a project re-crack.
-- [ ] Return every module whose compiled output actually changed, not just the edited one.
-- [ ] Add a test in `Fable.Daemon.Tests` that changes `sample-project/Component.fsi` (e.g. removes the `Component` val) and asserts a diagnostic on `Component.fs`.
-- [ ] Update `types.d.ts`: `import('vite').HMRPayload` is deprecated in favour of `HotPayload` (`vite/types/hmrPayload.d.ts:1`).
-
-## 2. Hook-contract fixes
+## 1. Hook-contract fixes
 
 - **`map: null` is the wrong signal** (`index.js:454`). In the Rollup/Vite contract `null` means "I did not move code, keep the previous map"; the transform replaces F# with JS. The correct value is `{ mappings: '' }` — what Vite's own plugins use for this case (`plugins/css.ts:583`, `plugins/asset.ts:247`).
   Note: real F# source maps are **blocked upstream**. `FileWriter.AddSourceMapping` in `~/Projects/Fable/src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out; `CliArgs.SourceMaps` exists but does nothing. Needs a Fable PR first.
@@ -64,7 +17,7 @@ When a dependent file recompiles several F# files, only the originally changed m
 - **Path normalisation is asymmetric** (`index.js:234-238` vs `282-285`). `fsharpFileChanged` normalises the daemon's keys before storing them; `compileProject` indexes `compiledFSharpFiles` with an already-normalised name instead. If the daemon ever returns a backslash path, every value in `compilableFiles` becomes `undefined`. Normalise on the way in, in one place.
 - **`.fsx` is matched but never compiled** (`index.js:15`). Script files are never in `compilableFiles`, so every `.fsx` import warns and then fails to parse. Either drop `.fsx` from the regex or handle it.
 
-## 3. The JSX handoff to plugin-react works by accident
+## 2. The JSX handoff to plugin-react works by accident
 
 plugin-react 6 no longer transforms JSX per file. It sets the global `oxc.jsx` option plus `jsxRefreshInclude` in its `config()` hook; Vite's built-in `vite:oxc` then processes any id matching `jsxRefreshFilter` (`plugins/oxc.ts:310`) and forces `lang: 'js'` for non-JS extensions (`plugins/oxc.ts:266-268`).
 
@@ -76,6 +29,40 @@ Consequences: `jsx: "preserve"`, or an `.fs` component file that happens to cont
 
 - [ ] Decide deliberately whether the plugin keeps owning the JSX transform. If yes, pass `refresh` through explicitly rather than relying on Vite's `jsx-runtime` sniff.
 - [ ] Comment `sample-project/vite.config.js` and the docs so `include: /\.fs$/` is not mistaken for the thing that makes JSX work.
+
+## 3. The plugin is too noisy
+
+A plain `vite dev` on `sample-project` — five F# files, nothing wrong — prints **26 `[fable]` lines** before the page has loaded. Most of it is progress narration the user did not ask for:
+
+```
+[fable]: configResolved: Configuration: Debug
+[fable]: configResolved: Entry fsproj /abs/path/App.fsproj
+[fable]: buildStart: Starting daemon
+[fable]: buildStart: Initial project crack
+[fable]: projectChanged: dependent file /abs/path/App.fsproj changed.
+[fable]: compileProject: Full compile started of /abs/path/App.fsproj
+[fable]: compileProject: fable-library located at /abs/path/node_modules/...
+[fable]: compileProject: about to type-checked /abs/path/App.fsproj.
+[fable]: compileProject: /abs/path/App.fsproj was type-checked.
+[fable]: compileProject: Full compile completed of /abs/path/App.fsproj
+[fable]: transform: /abs/path/Library.fs          (one per file, every time)
+```
+
+Vite itself prints four lines for a whole dev server. The plugin should be comparable: one line saying which project it compiled and how long it took, with the rest behind a flag.
+
+Problems to fix while there:
+
+- Several of these are `logInfo`/`logDebug` but reach the user identically — `logDebug` uses `logger.info` with dimmed colour, so nothing is actually filtered. There is no debug level; `VITE_PLUGIN_FABLE_DEBUG` only switches the daemon's own web log on port 9014.
+- Absolute paths everywhere. Vite prints paths relative to root; these should too.
+- `transform` logs one line per file on every request, so a page load with 50 F# files is 50 lines.
+- Wording: "about to type-checked", "dependent file X changed." during the initial crack when nothing changed.
+
+**To do**
+
+- [ ] Decide the default output: probably one line on a successful compile (project + duration), plus diagnostics, plus errors. Nothing per file.
+- [ ] Make `logDebug` respect a real debug switch (Vite's `logLevel`, `DEBUG=vite:fable`, or the existing `VITE_PLUGIN_FABLE_DEBUG`) rather than always printing.
+- [ ] Log paths relative to `config.root`.
+- [ ] Fix the wording that reads like a progress trace.
 
 ## 4. Do not block `httpServer.listen` on the first compile
 
@@ -142,14 +129,14 @@ Passed over because the bits would then arrive on first `vite dev` rather than a
 
 ## 6. Turn on TypeScript strict mode
 
-`tsconfig.json` still has `"strict": false`, carried over from the `checkJs` era. That is why the type checker never flagged `resolvedConfig.configFile` being optional (item 2) despite running over the plugin the whole time.
+`tsconfig.json` still has `"strict": false`, carried over from the `checkJs` era. That is why the type checker never flagged `resolvedConfig.configFile` being optional (item 1) despite running over the plugin the whole time.
 
 Kept separate from the TypeScript conversion on purpose: the conversion was mechanical and reviewable as a diff, whereas flipping this flag surfaces real errors that need real fixes.
 
 **To do**
 
-- [ ] Set `"strict": true` and fix what falls out; expect item 2's `configFile` bug to be among it.
-- [ ] Consider `noUncheckedIndexedAccess` as a follow-up — that is the `compiledFSharpFiles[file]` class of bug, also in item 2.
+- [ ] Set `"strict": true` and fix what falls out; expect item 1's `configFile` bug to be among it.
+- [ ] Consider `noUncheckedIndexedAccess` as a follow-up — that is the `compiledFSharpFiles[file]` class of bug, also in item 1.
 
 ## 7. Tighten the daemon ↔ plugin RPC contract
 
@@ -170,7 +157,7 @@ The contract is hand-mirrored today and the mirroring is positional, which is wh
 
 ## 9. Rejected: writing the plugin in F# / Fable
 
-Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` between daemon and plugin; items 8 and 9 deliver that at a fraction of the cost.
+Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` between daemon and plugin; items 5 and 6 deliver that at a fraction of the cost.
 
 - Of the roughly fifteen findings in the Vite review, exactly one (`resolvedConfig.configFile` being optional) was a shape bug a type system catches. The rest are semantics — what Vite and Node _do_ — and no type system encodes "returning an empty array from `handleHotUpdate` means send nothing".
 - Hand-written Fable bindings are unverified assertions about someone else's API, and they read as authoritative once written. Consuming Vite's own `.d.ts` means a hook shape change fails the build; a binding just keeps agreeing with itself.
