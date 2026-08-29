@@ -26,8 +26,9 @@ interface FSharpDiscriminatedUnion {
   fields: any[];
 }
 
-function describeFailure(reason: string): string {
-  return `${reason}\nThe Fable daemon could not be started. vite-plugin-fable needs the .NET 10 SDK on your PATH; check that \`dotnet --version\` works.`;
+/** The SDK advice only fits a daemon that never started; a mid-session crash is a different bug. */
+function describeStartFailure(reason: string): string {
+  return `${reason}\nvite-plugin-fable needs the .NET 10 SDK on your PATH; check that \`dotnet --version\` works.`;
 }
 
 /**
@@ -64,12 +65,17 @@ export function startDaemon(logger: DaemonLogger): FableDaemon {
   const failed: Promise<never> = new Promise<never>(
     (_resolve: unknown, reject: (reason: Error) => void) => {
       dotnetProcess.once("error", (error: Error) => {
-        reject(new Error(describeFailure(`Could not spawn \`dotnet\`: ${error.message}`)));
+        reject(new Error(describeStartFailure(`Could not spawn \`dotnet\`: ${error.message}`)));
       });
       dotnetProcess.once("exit", (code: number | null, signal: NodeJS.Signals | null) => {
         if (disposed) return;
         const how: string = signal ? `signal ${signal}` : `exit code ${code}`;
-        reject(new Error(describeFailure(`The Fable daemon stopped unexpectedly (${how}).`)));
+        // Whatever went wrong, it was not the SDK: the daemon had already started.
+        reject(
+          new Error(
+            `The Fable daemon stopped unexpectedly (${how}). Any output it wrote is above this.`,
+          ),
+        );
       });
     },
   );

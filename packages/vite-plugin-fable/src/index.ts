@@ -31,6 +31,12 @@ export type { FableConfiguration, PluginOptions } from "./types.js";
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
 
+/** `VITE_PLUGIN_FABLE_DEBUG` also starts the daemon's log viewer, which the option does not. */
+const daemonLogViewerEnabled: boolean =
+  !!process.env.VITE_PLUGIN_FABLE_DEBUG &&
+  process.env.VITE_PLUGIN_FABLE_DEBUG !== "0" &&
+  process.env.VITE_PLUGIN_FABLE_DEBUG !== "false";
+
 /**
  * `Component.fs?raw` and `Component.fs?url` ask for the file, not the module it compiles to, and
  * Vite's asset plugin has already answered by the time a transform runs. Compiling over that
@@ -41,10 +47,6 @@ const assetQueryRegex = /[?&](raw|url)(?:&|$)/;
 /** Vite's own `cleanUrl`, which is internal to `vite/src/shared/utils` and not exported. */
 function cleanUrl(id: string): string {
   return id.replace(/[?#].*$/, "");
-}
-
-if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
-  console.log(`Running daemon in debug mode, visit http://localhost:9014 to view logs`);
 }
 
 /**
@@ -76,36 +78,54 @@ export function createFablePlugin(
     logger: { info: console.log, warn: console.warn, error: console.error } as unknown as Logger,
     daemon: null,
     isBuild: false,
+    root: "",
   };
 
+  /**
+   * A path as Vite would print it: relative to the root, like its own output. Paths outside the
+   * root stay absolute, because a pile of `../..` is worse than the real thing.
+   */
+  function short(file: string): string {
+    if (!state.root) return file;
+    const rel: string = path.relative(state.root, file);
+    return rel && !rel.startsWith("..") ? rel : file;
+  }
+
+  /**
+   * Detail that only helps when something is wrong: every hook, every file transformed, where
+   * `fable-library` was found. Off unless the `debug` option or `VITE_PLUGIN_FABLE_DEBUG` is set,
+   * which is the difference from the old `logDebug` — that one dimmed the colour and printed
+   * anyway, so there was no way to turn any of this off.
+   */
   function logDebug(prefix: string, message: string): void {
-    state.logger.info(colors.dim(`[fable]: ${prefix}: ${message}`), {
+    if (!state.config.debug) return;
+    state.logger.info(colors.dim(`[fable] ${prefix}: ${message}`), {
       timestamp: true,
     });
   }
 
-  function logInfo(prefix: string, message: string): void {
-    state.logger.info(colors.green(`[fable]: ${prefix}: ${message}`), {
+  /** Something the user asked for and always wants: a finished compile. */
+  function logInfo(message: string): void {
+    state.logger.info(`${colors.green("[fable]")} ${message}`, {
       timestamp: true,
     });
   }
 
-  function logWarn(prefix: string, message: string): void {
-    state.logger.warn(colors.yellow(`[fable]: ${prefix}: ${message}`), {
+  function logWarn(message: string): void {
+    state.logger.warn(colors.yellow(`[fable] ${message}`), {
       timestamp: true,
     });
   }
 
-  function logError(prefix: string, message: string): void {
-    state.logger.error(colors.red(`[fable] ${prefix}: ${message}`), {
+  function logError(message: string): void {
+    state.logger.error(colors.red(`[fable] ${message}`), {
       timestamp: true,
     });
   }
 
-  function logCritical(prefix: string, message: string): void {
-    state.logger.error(colors.red(`[fable] ${prefix}: ${message}`), {
-      timestamp: true,
-    });
+  /** Seconds to two decimals, the way Vite reports its own timings. */
+  function since(start: number): string {
+    return `${((performance.now() - start) / 1000).toFixed(2)}s`;
   }
 
   /**
@@ -152,13 +172,13 @@ export function createFablePlugin(
     for (const diagnostic of diagnostics) {
       switch (diagnostic.severity.toLowerCase()) {
         case "error":
-          logError("", formatDiagnostic(diagnostic));
+          logError(formatDiagnostic(diagnostic));
           break;
         case "warning":
-          logWarn("", formatDiagnostic(diagnostic));
+          logWarn(formatDiagnostic(diagnostic));
           break;
         default:
-          logInfo("", formatDiagnostic(diagnostic));
+          logInfo(formatDiagnostic(diagnostic));
           break;
       }
     }
@@ -183,12 +203,12 @@ export function createFablePlugin(
    * Does a type-check and compilation of the state.fsproj
    */
   async function compileProject(addWatchFile: (id: string) => void): Promise<void> {
-    logInfo("compileProject", `Full compile started of ${state.fsproj}`);
+    const started: number = performance.now();
+    logDebug("compileProject", `full compile of ${short(requireFsproj())}`);
     const fableLibrary: string = await getFableLibrary();
-    logDebug("compileProject", `fable-library located at ${fableLibrary}`);
-    logInfo("compileProject", `about to type-checked ${state.fsproj}.`);
+    logDebug("compileProject", `fable-library at ${short(fableLibrary)}`);
     const projectResponse: ProjectFileData = await getProjectFile(fableLibrary);
-    logInfo("compileProject", `${state.fsproj} was type-checked.`);
+    logDebug("compileProject", `type-checked in ${since(started)}`);
     logDiagnostics(projectResponse.diagnostics);
     failBuildOnErrors(projectResponse.diagnostics);
     for (const sf of projectResponse.sourceFiles) {
@@ -200,7 +220,7 @@ export function createFablePlugin(
       addWatchFile(dependentFile);
     }
     const compiledFSharpFiles: Record<string, string> = await requireDaemon().initialCompile();
-    logInfo("compileProject", `Full compile completed of ${state.fsproj}`);
+    logInfo(`compiled ${short(requireFsproj())} in ${since(started)}`);
     state.sourceFiles.forEach((file: string): void => addWatchFile(file));
     // Key off what the daemon returned rather than looking each source file up in it: the two sets
     // differ (signature files are never compiled), and indexing a raw-keyed map with an
@@ -218,7 +238,7 @@ export function createFablePlugin(
     projectFiles: Set<string>,
   ): Promise<void> {
     try {
-      logInfo("projectChanged", `dependent file ${Array.from(projectFiles).join("\n")} changed.`);
+      logDebug("projectChanged", Array.from(projectFiles).map(short).join(", "));
       state.sourceFiles.clear();
       state.compilableFiles.clear();
       state.dependentFiles.clear();
@@ -226,10 +246,7 @@ export function createFablePlugin(
       await compileProject(addWatchFile);
     } catch (e) {
       projectFailure = e instanceof Error ? e : new Error(String(e));
-      logCritical(
-        "projectChanged",
-        `Unexpected failure during projectChanged for ${Array.from(projectFiles)},\n${e}`,
-      );
+      logError(`could not compile ${Array.from(projectFiles).map(short).join(", ")}:\n${e}`);
       // A dev server keeps running so the next edit can fix it; a build must not exit 0.
       if (state.isBuild) throw e;
     }
@@ -239,10 +256,11 @@ export function createFablePlugin(
    * F# files part of state.compilableFiles have changed.
    */
   async function fsharpFileChanged(files: string[]): Promise<BatchResult> {
+    const started: number = performance.now();
     try {
       const { compiledFiles, diagnostics } = await requireDaemon().compile(files);
 
-      logDebug("fsharpFileChanged", `\n${Object.keys(compiledFiles).join("\n")} compiled`);
+      logDebug("fsharpFileChanged", Object.keys(compiledFiles).map(short).join(", "));
 
       // Fable recompiles everything downstream of the edit, but most of that output is byte for
       // byte what we already served. Reporting it anyway would drag modules that cannot accept a
@@ -257,12 +275,10 @@ export function createFablePlugin(
       }
 
       logDiagnostics(diagnostics);
+      logInfo(`compiled ${files.map(short).join(", ")} in ${since(started)}`);
       return { diagnostics, changedFiles, projectChanged: false };
     } catch (e) {
-      logCritical(
-        "fsharpFileChanged",
-        `compilation of ${files} failed, plugin could not handle this gracefully. ${e}`,
-      );
+      logError(`could not compile ${files.map(short).join(", ")}:\n${e}`);
       return { diagnostics: [], changedFiles: [], projectChanged: false };
     }
   }
@@ -341,7 +357,7 @@ export function createFablePlugin(
         await projectChanged(addWatchFile, batch.projectFiles);
       } else {
         const files: string[] = Array.from(batch.fsharpFiles);
-        logDebug("runBatch", files.join("\n"));
+        logDebug("runBatch", files.map(short).join(", "));
         const compiled: BatchResult = await fsharpFileChanged(files);
         result.diagnostics = compiled.diagnostics;
         result.changedFiles = compiled.changedFiles;
@@ -414,7 +430,6 @@ export function createFablePlugin(
     );
     if (wouldRefresh(normalizePath(path.join(resolvedConfig.root, "Component.fs")))) return;
     logWarn(
-      "configResolved",
       "@vitejs/plugin-react will not apply Fast Refresh to .fs files, so editing an F# component " +
         "reloads the page instead of updating in place. Add the extension to its filter: " +
         "react({ include: /\\.fs$/ }).",
@@ -423,10 +438,14 @@ export function createFablePlugin(
 
   /** Spawns the daemon and takes ownership of it until `buildEnd`. */
   function openDaemon(): void {
-    logInfo("daemon", "Starting daemon");
+    logDebug("daemon", "starting");
+    // Only the env var starts the daemon's own viewer; the `debug` option is plugin-side only.
+    if (daemonLogViewerEnabled) {
+      logDebug("daemon", "log viewer at http://localhost:9014");
+    }
     state.daemon = createDaemon({
-      info: (message: string): void => logInfo("daemon", message),
-      error: (message: string): void => logError("daemon", message),
+      info: (message: string): void => logDebug("daemon", message),
+      error: (message: string): void => logError(`daemon: ${message}`),
     });
     process.once("SIGINT", onSigint);
   }
@@ -484,10 +503,11 @@ export function createFablePlugin(
     configResolved: async function (resolvedConfig: ResolvedConfig) {
       state.logger = resolvedConfig.logger;
       state.isBuild = resolvedConfig.command === "build";
+      state.root = normalizePath(resolvedConfig.root);
       // Keyed off the command, not `env.MODE`: `vite build --mode staging` is still a build, and
       // reading MODE there compiled the F# in Debug while bundling it as production output.
       state.configuration = state.config.configuration ?? (state.isBuild ? "Release" : "Debug");
-      logDebug("configResolved", `Configuration: ${state.configuration}`);
+      logDebug("configResolved", `configuration ${state.configuration}`);
       // `configFile` is optional — there may not be one at all — while `root` is always resolved.
       const projectDir: string = resolvedConfig.root;
 
@@ -498,9 +518,9 @@ export function createFablePlugin(
       }
 
       if (!state.fsproj) {
-        logCritical("configResolved", `No .fsproj file was found in ${projectDir}`);
+        logError(`no .fsproj file was found in ${short(projectDir)}`);
       } else {
-        logInfo("configResolved", `Entry fsproj ${state.fsproj}`);
+        logDebug("configResolved", `entry project ${short(state.fsproj)}`);
       }
 
       warnIfComponentsWillNotRefresh(resolvedConfig);
@@ -518,7 +538,7 @@ export function createFablePlugin(
         if (!id.startsWith(rootPrefix)) server.watcher.add(id);
       };
 
-      logDebug("configureServer", "Initial project crack");
+      logDebug("configureServer", "initial project crack");
       // Deliberately not returned or awaited. Rejecting would be an unhandled rejection, so the
       // failure is recorded for `transform` instead.
       ready = (async (): Promise<void> => {
@@ -527,7 +547,7 @@ export function createFablePlugin(
           await queueProjectChange(requireFsproj());
         } catch (e) {
           projectFailure = e instanceof Error ? e : new Error(String(e));
-          logCritical("configureServer", `Fable could not be started: ${e}`);
+          logError(`could not start: ${e}`);
         }
       })();
     },
@@ -540,7 +560,7 @@ export function createFablePlugin(
         openDaemon();
         await projectChanged(addWatchFile, new Set([requireFsproj()]));
       } catch (e) {
-        logCritical("buildStart", `Unexpected failure during buildStart: ${e}`);
+        logError(`could not start: ${e}`);
         throw e;
       }
     },
@@ -554,7 +574,7 @@ export function createFablePlugin(
         },
       },
       async handler(src, id) {
-        logDebug("transform", id);
+        logDebug("transform", short(cleanUrl(id)));
         // The dev server listens before the first compile is done, so a request can arrive while
         // the project is still being cracked. This is the wait that used to sit in `buildStart`.
         await ready;
@@ -592,7 +612,9 @@ export function createFablePlugin(
           // get a syntax error pointing at `module Foo` instead of the real cause.
           this.error(`${id} was not compiled by Fable, so it cannot be bundled.`);
         } else {
-          logWarn("transform", `${id} is not part of compilableFiles.`);
+          logWarn(
+            `${short(cleanUrl(id))} is not part of the project, so Fable did not compile it.`,
+          );
         }
       },
     },
@@ -612,7 +634,7 @@ export function createFablePlugin(
       // An MSBuild input changed: re-crack, then reload, because the module graph cannot express
       // "the whole project was rebuilt".
       if (state.dependentFiles.has(normalized)) {
-        logDebug("hotUpdate", `project file ${normalized} changed`);
+        logDebug("hotUpdate", `project file ${short(normalized)} changed`);
         await queueProjectChange(normalized);
         environment.hot.send({ type: "full-reload" });
         return [];
@@ -624,7 +646,7 @@ export function createFablePlugin(
       // can establish. F# projects list their files, so this usually rides along with the fsproj.
       if (type !== "update") {
         if (!sourceFile && !fsharpFileRegex.test(normalized)) return;
-        logDebug("hotUpdate", `${normalized} was ${type}d, re-cracking`);
+        logDebug("hotUpdate", `${short(normalized)} was ${type}d, re-cracking`);
         await queueProjectChange(normalized);
         environment.hot.send({ type: "full-reload" });
         return [];
@@ -632,9 +654,9 @@ export function createFablePlugin(
 
       if (!sourceFile) return;
 
-      logDebug("hotUpdate", `enter for ${sourceFile}`);
+      logDebug("hotUpdate", `enter for ${short(sourceFile)}`);
       const result: BatchResult = await queueSourceChange(sourceFile);
-      logDebug("hotUpdate", `leave for ${sourceFile}`);
+      logDebug("hotUpdate", `leave for ${short(sourceFile)}`);
 
       const errorDiagnostic: Diagnostic | undefined = result.diagnostics.find(
         (diag: Diagnostic): boolean => diag.severity.toLowerCase() === "error",
@@ -663,7 +685,7 @@ export function createFablePlugin(
       return updated.size > 0 ? Array.from(updated) : undefined;
     },
     buildEnd: () => {
-      logInfo("buildEnd", "Closing daemon");
+      logDebug("buildEnd", "closing daemon");
       process.off("SIGINT", onSigint);
       state.daemon?.dispose();
       state.daemon = null;

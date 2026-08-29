@@ -2,49 +2,15 @@
 
 Captured on 2026-08-29 after a scan of the code base, trimmed as items land. Each item has enough context to be picked up independently.
 
-Items 1 and 3 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
+Item 1 was verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
 
-Order is a rough suggestion: 1 and 3 are contract fixes and design questions, 4-9 are larger. Item 10 records a decision rather than work.
+Order is a rough suggestion: item 1 is what is left of the contract fixes, 4-9 are larger. Item 10 records a decision rather than work.
 
 ## 1. Hook-contract fixes
 
 - **Real F# source maps are blocked upstream.** `FileWriter.AddSourceMapping` in `~/Projects/Fable/src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out; `CliArgs.SourceMaps` exists but does nothing. Needs a Fable PR first.
   The plugin now returns `{ mappings: '' }`, which stops later stages from producing a map that labels the compiled JavaScript as the contents of a `.fs` file, but a real F#-to-JS mapping needs the Fable change first.
 - **No `load` hook.** Vite reads the whole `.fs` file off disk purely so `transform` can discard it. A `load` for ids in `compilableFiles` skips the I/O and states the intent. Return `moduleType: 'js'` too — `vite:oxc` does (`plugins/oxc.ts:330`) — otherwise rolldown infers the type from the `.fs` extension.
-
-## 3. The plugin is too noisy
-
-A plain `vite dev` on `sample-project` — five F# files, nothing wrong — prints **26 `[fable]` lines** before the page has loaded. Most of it is progress narration the user did not ask for:
-
-```
-[fable]: configResolved: Configuration: Debug
-[fable]: configResolved: Entry fsproj /abs/path/App.fsproj
-[fable]: buildStart: Starting daemon
-[fable]: buildStart: Initial project crack
-[fable]: projectChanged: dependent file /abs/path/App.fsproj changed.
-[fable]: compileProject: Full compile started of /abs/path/App.fsproj
-[fable]: compileProject: fable-library located at /abs/path/node_modules/...
-[fable]: compileProject: about to type-checked /abs/path/App.fsproj.
-[fable]: compileProject: /abs/path/App.fsproj was type-checked.
-[fable]: compileProject: Full compile completed of /abs/path/App.fsproj
-[fable]: transform: /abs/path/Library.fs          (one per file, every time)
-```
-
-Vite itself prints four lines for a whole dev server. The plugin should be comparable: one line saying which project it compiled and how long it took, with the rest behind a flag.
-
-Problems to fix while there:
-
-- Several of these are `logInfo`/`logDebug` but reach the user identically — `logDebug` uses `logger.info` with dimmed colour, so nothing is actually filtered. There is no debug level; `VITE_PLUGIN_FABLE_DEBUG` only switches the daemon's own web log on port 9014.
-- Absolute paths everywhere. Vite prints paths relative to root; these should too.
-- `transform` logs one line per file on every request, so a page load with 50 F# files is 50 lines.
-- Wording: "about to type-checked", "dependent file X changed." during the initial crack when nothing changed.
-
-**To do**
-
-- [ ] Decide the default output: probably one line on a successful compile (project + duration), plus diagnostics, plus errors. Nothing per file.
-- [ ] Make `logDebug` respect a real debug switch (Vite's `logLevel`, `DEBUG=vite:fable`, or the existing `VITE_PLUGIN_FABLE_DEBUG`) rather than always printing.
-- [ ] Log paths relative to `config.root`.
-- [ ] Fix the wording that reads like a progress trace.
 
 ## 4. Replace the built-in debug server with a Vite DevTools panel
 

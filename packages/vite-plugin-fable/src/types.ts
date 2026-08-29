@@ -56,6 +56,14 @@ export interface PluginOptions {
   /** Pass `exclude` to Fable.Compiler. */
   exclude?: string[];
   /**
+   * Print what the plugin is doing: every hook it runs, every file it transforms, where it found
+   * `fable-library`, and the daemon's own chatter.
+   *
+   * Off by default, where the plugin prints one line per compile plus diagnostics and errors.
+   * `VITE_PLUGIN_FABLE_DEBUG` turns it on too, and additionally starts the daemon's log viewer.
+   */
+  debug?: boolean;
+  /**
    * The MSBuild configuration to compile with.
    *
    * Defaults to `Release` for `vite build` and `Debug` for `vite dev`, whatever `--mode` says:
@@ -88,6 +96,8 @@ export interface PluginState {
   dependentFiles: Set<string>;
   /** Whether Vite was invoked with `build` rather than `serve`. */
   isBuild: boolean;
+  /** Vite's resolved root, so logged paths can be relative to it the way Vite's own are. */
+  root: string;
 }
 
 /** What one coalesced batch of file changes produced. */

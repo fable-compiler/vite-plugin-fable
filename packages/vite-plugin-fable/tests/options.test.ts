@@ -5,7 +5,7 @@ import type { PluginOptions, ResolvedPluginOptions } from "../src/types.js";
 describe("resolveOptions", () => {
   test("fills in the defaults when nothing is given", () => {
     const resolved: ResolvedPluginOptions = resolveOptions(undefined);
-    expect(resolved).toEqual({ jsx: null, noReflection: false, exclude: [] });
+    expect(resolved).toEqual({ jsx: null, noReflection: false, exclude: [], debug: false });
   });
 
   test("keeps what the user set", () => {
@@ -30,7 +30,7 @@ describe("resolveOptions", () => {
 
   test("lists the known options for an unrecognisable key", () => {
     expect(() => resolveOptions({ wat: 1 } as unknown as PluginOptions)).toThrow(
-      /Known options: fsproj, jsx, noReflection, exclude, configuration/,
+      /Known options: fsproj, jsx, noReflection, exclude, configuration, debug/,
     );
   });
 
