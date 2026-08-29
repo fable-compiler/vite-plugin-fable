@@ -62,7 +62,7 @@ export function createFablePlugin(
     isBuild: false,
   };
 
-  const pendingChangesSubject = new Subject<HookEvent>();
+  const pendingChangesSubject: Subject<HookEvent> = new Subject<HookEvent>();
 
   function logDebug(prefix: string, message: string): void {
     state.logger.info(colors.dim(`[fable]: ${prefix}: ${message}`), {
@@ -98,10 +98,10 @@ export function createFablePlugin(
    * @param configDir - Folder path of the vite.config.js file.
    */
   async function findFsProjFile(configDir: string): Promise<string | null> {
-    const files = await fs.readdir(configDir);
-    const fsprojFiles = files
-      .filter((file) => file && file.toLocaleLowerCase().endsWith(".fsproj"))
-      .map((fsProjFile) => {
+    const files: string[] = await fs.readdir(configDir);
+    const fsprojFiles: string[] = files
+      .filter((file: string) => file && file.toLocaleLowerCase().endsWith(".fsproj"))
+      .map((fsProjFile: string) => {
         // Return the full path of the .fsproj file
         return normalizePath(path.join(configDir, fsProjFile));
       });
@@ -110,7 +110,7 @@ export function createFablePlugin(
 
   async function getFableLibrary(): Promise<string> {
     // Resolve through the module system so hoisted, isolated and pnpm-style layouts all work.
-    const packageJson = fileURLToPath(
+    const packageJson: string = fileURLToPath(
       import.meta.resolve("@fable-org/fable-library-js/package.json"),
     );
     return normalizePath(path.dirname(packageJson));
@@ -155,10 +155,10 @@ export function createFablePlugin(
    */
   async function compileProject(addWatchFile: (id: string) => void): Promise<void> {
     logInfo("compileProject", `Full compile started of ${state.fsproj}`);
-    const fableLibrary = await getFableLibrary();
+    const fableLibrary: string = await getFableLibrary();
     logDebug("compileProject", `fable-library located at ${fableLibrary}`);
     logInfo("compileProject", `about to type-checked ${state.fsproj}.`);
-    const projectResponse = await getProjectFile(fableLibrary);
+    const projectResponse: ProjectFileData = await getProjectFile(fableLibrary);
     logInfo("compileProject", `${state.fsproj} was type-checked.`);
     logDiagnostics(projectResponse.diagnostics);
     for (const sf of projectResponse.sourceFiles) {
@@ -169,11 +169,11 @@ export function createFablePlugin(
       state.dependentFiles.add(dependentFile);
       addWatchFile(dependentFile);
     }
-    const compiledFSharpFiles = await requireDaemon().initialCompile();
+    const compiledFSharpFiles: Record<string, string> = await requireDaemon().initialCompile();
     logInfo("compileProject", `Full compile completed of ${state.fsproj}`);
-    state.sourceFiles.forEach((file) => {
+    state.sourceFiles.forEach((file: string) => {
       addWatchFile(file);
-      const normalizedFileName = normalizePath(file);
+      const normalizedFileName: string = normalizePath(file);
       state.compilableFiles.set(normalizedFileName, compiledFSharpFiles[file]);
     });
   }
@@ -209,7 +209,7 @@ export function createFablePlugin(
       logDebug("fsharpFileChanged", `\n${Object.keys(compiledFiles).join("\n")} compiled`);
 
       for (const [key, value] of Object.entries(compiledFiles)) {
-        const normalizedFileName = normalizePath(key);
+        const normalizedFileName: string = normalizePath(key);
         state.compilableFiles.set(normalizedFileName, value);
       }
 
@@ -263,8 +263,8 @@ export function createFablePlugin(
   }
 
   async function makeHmrError(diagnostic: Diagnostic): Promise<HotPayload> {
-    const fileContent = await fs.readFile(diagnostic.fileName, "utf-8");
-    const frame = codeFrameColumns(fileContent, {
+    const fileContent: string = await fs.readFile(diagnostic.fileName, "utf-8");
+    const frame: string = codeFrameColumns(fileContent, {
       start: {
         line: diagnostic.range.startLine,
         column: diagnostic.range.startColumn,
@@ -298,7 +298,8 @@ export function createFablePlugin(
       state.configuration = resolvedConfig.env.MODE === "production" ? "Release" : "Debug";
       state.isBuild = resolvedConfig.command === "build";
       logDebug("configResolved", `Configuration: ${state.configuration}`);
-      const configDir = resolvedConfig.configFile && path.dirname(resolvedConfig.configFile);
+      const configDir: string | undefined =
+        resolvedConfig.configFile && path.dirname(resolvedConfig.configFile);
 
       if (state.config && state.config.fsproj) {
         state.fsproj = state.config.fsproj;
@@ -316,8 +317,8 @@ export function createFablePlugin(
       try {
         logInfo("buildStart", "Starting daemon");
         state.daemon = createDaemon({
-          info: (message) => logInfo("daemon", message),
-          error: (message) => logError("daemon", message),
+          info: (message: string): void => logInfo("daemon", message),
+          error: (message: string): void => logError("daemon", message),
         });
         process.once("SIGINT", onSigint);
 
@@ -327,22 +328,25 @@ export function createFablePlugin(
           state.pendingChanges = pendingChangesSubject
             .pipe(
               bufferTime(50),
-              map((events) => {
+              map((events: HookEvent[]): PendingChangesState => {
                 return events.reduce(reducePendingChange, {
                   projectChanged: false,
                   fsharpFiles: new Set<string>(),
                   projectFiles: new Set<string>(),
                 });
               }),
-              filter((state) => state.projectChanged || state.fsharpFiles.size > 0),
+              filter(
+                (pending: PendingChangesState): boolean =>
+                  pending.projectChanged || pending.fsharpFiles.size > 0,
+              ),
             )
-            .subscribe(async (pendingChanges) => {
+            .subscribe(async (pendingChanges: PendingChangesState): Promise<void> => {
               let diagnostics: Diagnostic[] = [];
 
               if (pendingChanges.projectChanged) {
                 await projectChanged(this.addWatchFile.bind(this), pendingChanges.projectFiles);
               } else {
-                const files = Array.from(pendingChanges.fsharpFiles);
+                const files: string[] = Array.from(pendingChanges.fsharpFiles);
                 logDebug("subscribe", files.join("\n"));
                 diagnostics = await fsharpFileChanged(files);
               }
@@ -370,14 +374,15 @@ export function createFablePlugin(
       async handler(src, id) {
         logDebug("transform", id);
         if (state.compilableFiles.has(id)) {
-          let code = state.compilableFiles.get(id);
+          let code: string | undefined = state.compilableFiles.get(id);
           // If Fable outputted JSX, we still need to transform this.
           // @vitejs/plugin-react does not do this.
           if (state.config.jsx) {
             const runtime: "automatic" | "classic" =
               state.config.jsx === "automatic" ? "automatic" : "classic";
-            const jsx = state.config.jsx === "preserve" ? "preserve" : { runtime };
-            const oxcResult = await transformWithOxc(code, id, {
+            const jsx: "preserve" | { runtime: "automatic" | "classic" } =
+              state.config.jsx === "preserve" ? "preserve" : { runtime };
+            const oxcResult: { code: string } = await transformWithOxc(code, id, {
               lang: "jsx",
               jsx,
             });
@@ -412,18 +417,20 @@ export function createFablePlugin(
 
         // The idea is to wait for a shared promise to resolve.
         // This will resolve in the subscription of state.changedFSharpFiles
-        const diagnostics = await state.hotPromiseWithResolvers.promise;
+        const diagnostics: Diagnostic[] = await state.hotPromiseWithResolvers.promise;
         logDebug("handleHotUpdate", `leave for ${file}`);
 
-        const errorDiagnostic = diagnostics.find((diag) => diag.severity === "Error");
+        const errorDiagnostic: Diagnostic | undefined = diagnostics.find(
+          (diag: Diagnostic): boolean => diag.severity === "Error",
+        );
         if (errorDiagnostic) {
-          const msg = await makeHmrError(errorDiagnostic);
+          const msg: HotPayload = await makeHmrError(errorDiagnostic);
           server.hot.send(msg);
           return [];
         } else {
           // Potentially a file that is not imported in the current graph was changed.
           // Vite should not try and hot update that module.
-          return modules.filter((m) => m.importers.size !== 0);
+          return modules.filter((m: ModuleNode): boolean => m.importers.size !== 0);
         }
       }
     },

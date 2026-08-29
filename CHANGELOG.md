@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- oxlint runs over the repository, with `@nojaf/oxlint-plugin-annotate-non-primitives` requiring an explicit type annotation wherever the type is not obvious from the initializer. Every `lint` script runs oxlint before the TypeScript checks, and CI runs them on every PR.
+- `scripts/changelog-updater.js` is now TypeScript and type-checked by `tsconfig.scripts.json`. `docs/scripts/command.js` stays JavaScript: the docs pages load it directly through an import map with no bundler, so porting it would mean adding a build step to a pipeline that has none.
 - The plugin package is laid out as `src/` and `tests/`, with `bun test` covering the Vite hooks against a stub daemon. `bun run test:plugin` runs them; CI runs them on every PR.
 - The daemon lives behind a `FableDaemon` interface in its own module. Process lifetime, the JSON-RPC endpoint and the positional wire format no longer leak into the plugin, which can now be run against a stub daemon in tests.
 - The daemon process is spawned without a shell, so a `dotnet` that is not on `PATH` now fails immediately with an actionable message instead of hanging the dev server forever. Its stderr is drained (an undrained pipe would deadlock the daemon once the buffer filled), requests fail fast if the daemon exits, and the daemon is also stopped on `SIGINT`.

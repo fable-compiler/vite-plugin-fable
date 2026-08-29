@@ -82,7 +82,7 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
 
     blockNextCompile(): () => void {
       let resolve!: () => void;
-      blocked = new Promise<void>((r) => {
+      blocked = new Promise<void>((r: () => void) => {
         resolve = r;
       });
       return resolve;
@@ -108,7 +108,7 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
       guard();
       compileCalls.push(files);
       if (blocked) {
-        const gate = blocked;
+        const gate: Promise<void> = blocked;
         blocked = null;
         await gate;
       }
