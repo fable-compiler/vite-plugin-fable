@@ -10,6 +10,7 @@ import withResolvers from "promise.withresolvers";
 import { codeFrameColumns } from "@babel/code-frame";
 import { startDaemon } from "./daemon.js";
 import type {
+  DaemonLogger,
   Diagnostic,
   FableDaemon,
   HookEvent,
@@ -32,6 +33,21 @@ const defaultConfig: PluginOptions = { jsx: null, noReflection: false, exclude: 
  * Initializes and returns a Vite plugin to process the incoming F# project.
  */
 export default function fablePlugin(userConfig?: PluginOptions): Plugin {
+  return createFablePlugin(userConfig, startDaemon);
+}
+
+/**
+ * The plugin, with the daemon injected.
+ *
+ * Not part of the public API — {@link fablePlugin} is. This exists so tests can drive every hook
+ * against a stub daemon, without spawning `dotnet` or compiling F# for real.
+ *
+ * @internal
+ */
+export function createFablePlugin(
+  userConfig: PluginOptions | undefined,
+  createDaemon: (logger: DaemonLogger) => FableDaemon,
+): Plugin {
   const state: PluginState = {
     config: Object.assign({}, defaultConfig, userConfig),
     compilableFiles: new Map(),
@@ -299,7 +315,7 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
     buildStart: async function () {
       try {
         logInfo("buildStart", "Starting daemon");
-        state.daemon = startDaemon({
+        state.daemon = createDaemon({
           info: (message) => logInfo("daemon", message),
           error: (message) => logError("daemon", message),
         });
@@ -402,7 +418,6 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
         const errorDiagnostic = diagnostics.find((diag) => diag.severity === "Error");
         if (errorDiagnostic) {
           const msg = await makeHmrError(errorDiagnostic);
-          console.log(msg);
           server.hot.send(msg);
           return [];
         } else {

@@ -32,6 +32,9 @@ jobs:
       - name: TypeScript check
         run: bun run lint
 
+      - name: Test plugin
+        run: bun run test:plugin
+
       - name: Build daemon
         run: bun run --cwd packages/vite-plugin-fable postinstall
 
