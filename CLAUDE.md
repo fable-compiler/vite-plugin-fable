@@ -7,10 +7,6 @@ Use Bun for everything, including ad-hoc registry lookups (`bun pm view`, not `n
 sample deliberately runs on the Bun runtime rather than Node — that is the only place the plugin is
 exercised under Bun, which matters because it spawns a child process and normalises paths.
 
-`ROADMAP.md` is the working plan. Items are **deleted** when done, not ticked off; a finished item
-leaves nothing behind except whatever decision was worth keeping (see its "Rejected" entry). Keep
-its cross-references (`item N`) correct when renumbering.
-
 ## Check Vite and Fable behaviour against the source, not from memory
 
 Both are often checked out as **siblings of this repo**, so `../vite` and `../Fable` resolve from
