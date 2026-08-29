@@ -218,6 +218,13 @@ let private decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json 
         let getProperty (name : string) =
             properties.GetProperty(name).GetString()
 
+        /// MSBuild answers with an empty string for a property it has no value for, so this is only
+        /// about a property that was never asked for.
+        let tryGetProperty (name : string) : string =
+            match properties.TryGetProperty name with
+            | true, value -> value.GetString () |> Option.ofObj |> Option.defaultValue ""
+            | false, _ -> ""
+
         let paths =
             (getProperty "MSBuildAllProjects").Split(';', StringSplitOptions.RemoveEmptyEntries)
             |> Array.choose (fun path ->
@@ -247,8 +254,41 @@ let private decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json 
         let cacheFile =
             FileInfo (Path.Combine (intermediateOutputPath, $"{fsproj.Name}%s{DesignTimeBuildExtension}"))
 
+        /// The files MSBuild imports by convention rather than by an `<Import>` in the project.
+        ///
+        /// They have to be asked for by name: since MSBuild 16.9 imports no longer add themselves
+        /// to `MSBuildAllProjects`, so a `Directory.Build.props` does not appear there at all.
+        /// Without these, editing one changed nothing the cache key knew about, the design time
+        /// build was reused, and the plugin was never told to watch the file either.
+        let conventionImports =
+            [
+                yield "DirectoryBuildPropsPath"
+                yield "DirectoryBuildTargetsPath"
+                // The SDK resolves this whether or not central package management is on. When it is
+                // off the file is found and ignored, and watching it would re-crack the project for
+                // an edit that cannot change anything.
+                if
+                    String.Equals (
+                        tryGetProperty "ManagePackageVersionsCentrally",
+                        "true",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                then
+                    yield "DirectoryPackagesPropsPath"
+            ]
+            |> List.choose (fun property ->
+                let path = tryGetProperty property
+
+                if String.IsNullOrWhiteSpace path then
+                    None
+                else
+
+                let fi = FileInfo path
+                if fi.Exists then Some fi else None
+            )
+
         let dependentFiles =
-            [ yield fsproj ; yield! paths ; yield! nugetGProps ]
+            [ yield fsproj ; yield! paths ; yield! conventionImports ; yield! nugetGProps ]
             |> List.distinctBy (fun fi -> fi.FullName)
 
         Ok
@@ -285,7 +325,7 @@ let mkProjectCacheKey
             MSBuild.dotnet_msbuild
                 logger
                 fsproj
-                $"/p:Configuration=%s{options.Configuration} --getProperty:MSBuildAllProjects --getProperty:IntermediateOutputPath --getProperty:MSBuildProjectExtensionsPath"
+                $"/p:Configuration=%s{options.Configuration} --getProperty:MSBuildAllProjects --getProperty:IntermediateOutputPath --getProperty:MSBuildProjectExtensionsPath --getProperty:DirectoryBuildPropsPath --getProperty:DirectoryBuildTargetsPath --getProperty:DirectoryPackagesPropsPath --getProperty:ManagePackageVersionsCentrally"
 
         return decodeCacheKey options fsproj json
     }

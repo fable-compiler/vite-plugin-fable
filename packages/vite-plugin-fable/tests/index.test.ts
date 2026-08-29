@@ -82,6 +82,8 @@ interface Harness {
   load(id: string): Promise<LoadOutput>;
   /** Whether rolldown would call the `load` handler for this id at all. */
   loadFilterMatches(id: string): boolean;
+  /** Calls the `watchChange` hook the way Vite's plugin container does. */
+  watchChange(id: string): Promise<void>;
   /**
    * Calls `hotUpdate` the way Vite's HMR pipeline does. Vite computes one `timestamp` per file
    * change and then calls the hook once per environment with it, so tests can pass both.
@@ -183,6 +185,9 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
     },
     async load(id: string): Promise<LoadOutput> {
       return (plugin.load as any).handler.call(context, id);
+    },
+    async watchChange(id: string): Promise<void> {
+      return (plugin.watchChange as any).call(context, id, { event: "update" });
     },
     loadFilterMatches(id: string): boolean {
       const filter: { include: RegExp[]; exclude: RegExp[] } = (plugin.load as any).filter.id;
@@ -436,6 +441,39 @@ describe("hotUpdate across environments", () => {
     // Both files coalesced into one batch, and neither `ssr` call added another.
     expect(h.daemon.compileCalls).toHaveLength(1);
     expect(h.daemon.compileCalls[0]).toEqual([mathFs, libraryFs]);
+  });
+
+  test("cracks once when Vite reports an MSBuild change every way it can", async () => {
+    // A dev server calls `watchChange` (once, for the client environment) on top of calling
+    // `hotUpdate` for every environment, so a single touch of an fsproj arrived three times and
+    // cracked the project three times over, each one a full design time build.
+    const h: Harness = harness(
+      {},
+      {
+        sourceFiles: [mathFs],
+        dependentFiles: [appFsproj],
+        compiled: { [mathFs]: "const v = 1;" },
+      },
+    );
+    await h.start();
+    const timestamp: number = Date.now();
+
+    await h.watchChange(appFsproj);
+    await h.hotUpdate(appFsproj, "update", { timestamp, environment: "client" });
+    await h.hotUpdate(appFsproj, "update", { timestamp, environment: "ssr" });
+
+    // One for the initial crack, one for the change.
+    expect(h.daemon.projectChangedCalls).toHaveLength(2);
+  });
+
+  test("still re-cracks from watchChange during a build", async () => {
+    // `hotUpdate` is dev-only, so under `vite build --watch` this hook is the only one that runs.
+    const h: Harness = harness({}, { sourceFiles: [mathFs], dependentFiles: [appFsproj] });
+    await h.start(buildConfig());
+
+    await h.watchChange(appFsproj);
+
+    expect(h.daemon.projectChangedCalls).toHaveLength(2);
   });
 
   test("still compiles again for a genuinely new change", async () => {
