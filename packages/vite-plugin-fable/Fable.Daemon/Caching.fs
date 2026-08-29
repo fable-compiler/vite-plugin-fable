@@ -15,6 +15,10 @@ let DesignTimeBuildExtension = ".vite-plugin-design-time"
 [<Literal>]
 let FableModulesExtension = ".vite-plugin-fable-modules"
 
+/// Bumped whenever the cached shape changes. A cache written before a field existed deserialises
+/// that field as its default, which can look like a match; this makes such a cache invalid instead.
+let cacheFormatVersion = 2
+
 let fableCompilerVersion =
     let assembly = typeof<CrackerOptions>.Assembly
 
@@ -39,6 +43,9 @@ type InvalidCacheReason =
     | DependentFileCountDoesNotMatch of cachedCount : int * currentCount : int
     | DependentFileHashMismatch of file : FileInfo
     | FableCompilerVersionMismatch of cachedVersion : string * currentVersion : string
+    | ExcludeMismatch of cachedExclude : string list * currentExclude : string list
+    | NoReflectionMismatch of cachedNoReflection : bool * currentNoReflection : bool
+    | CacheFormatChanged of cachedVersion : int * currentVersion : int
 
 /// Contains all the info that determines the cache design time build value.
 /// This is not the cached information!
@@ -56,6 +63,12 @@ type CacheKey =
         Defines : Set<string>
         /// Configuration
         Configuration : string
+        /// Files excluded from compilation (via Vite plugin options).
+        /// Changes what Fable emits, so it has to invalidate the cache.
+        Exclude : string list
+        /// Whether reflection info is emitted (via Vite plugin options).
+        /// Changes what Fable emits, so it has to invalidate the cache.
+        NoReflection : bool
         /// AssemblyInformationalVersion of Fable.Compiler
         FableCompilerVersion : string
     }
@@ -93,6 +106,12 @@ type DesignTimeBuildCache =
         TargetFramework : string option
         [<ProtoMember(8)>]
         FableCompilerVersion : string
+        [<ProtoMember(9)>]
+        Exclude : string array
+        [<ProtoMember(10)>]
+        NoReflection : bool
+        [<ProtoMember(11)>]
+        CacheFormatVersion : int
     }
 
 let private isWindows = RuntimeInformation.IsOSPlatform OSPlatform.Windows
@@ -117,6 +136,9 @@ let writeDesignTimeBuild (x : CacheKey) (response : ProjectOptionsResponse) =
             OutputType = response.OutputType
             TargetFramework = response.TargetFramework
             FableCompilerVersion = x.FableCompilerVersion
+            Exclude = List.toArray x.Exclude
+            NoReflection = x.NoReflection
+            CacheFormatVersion = cacheFormatVersion
         }
 
     Serializer.Serialize (fs, data)
@@ -134,7 +156,9 @@ let canReuseDesignTimeBuildCache (cacheKey : CacheKey) : Result<ProjectOptionsRe
         let cacheContent = Serializer.Deserialize<DesignTimeBuildCache> fs
         let cachedDefines = Set.ofArray cacheContent.Defines
 
-        if fableCompilerVersion <> cacheContent.FableCompilerVersion then
+        if cacheContent.CacheFormatVersion <> cacheFormatVersion then
+            Error (InvalidCacheReason.CacheFormatChanged (cacheContent.CacheFormatVersion, cacheFormatVersion))
+        elif fableCompilerVersion <> cacheContent.FableCompilerVersion then
             Error (
                 InvalidCacheReason.FableCompilerVersionMismatch (
                     cacheContent.FableCompilerVersion,
@@ -145,6 +169,15 @@ let canReuseDesignTimeBuildCache (cacheKey : CacheKey) : Result<ProjectOptionsRe
             Error InvalidCacheReason.MainFsprojChanged
         elif cacheKey.Defines <> cachedDefines then
             Error (InvalidCacheReason.DefinesMismatch (cachedDefines, cacheKey.Defines))
+        elif cacheKey.Exclude <> List.ofArray (emptyArrayIfNull cacheContent.Exclude) then
+            Error (
+                InvalidCacheReason.ExcludeMismatch (
+                    List.ofArray (emptyArrayIfNull cacheContent.Exclude),
+                    cacheKey.Exclude
+                )
+            )
+        elif cacheKey.NoReflection <> cacheContent.NoReflection then
+            Error (InvalidCacheReason.NoReflectionMismatch (cacheContent.NoReflection, cacheKey.NoReflection))
         elif cacheKey.DependentFiles.Length <> cacheContent.DependentFiles.Length then
             Error (
                 InvalidCacheReason.DependentFileCountDoesNotMatch (
@@ -225,6 +258,8 @@ let private decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json 
                 DependentFiles = dependentFiles
                 Defines = Set.ofList options.FableOptions.Define
                 Configuration = options.Configuration
+                Exclude = options.Exclude
+                NoReflection = options.FableOptions.NoReflection
                 FableCompilerVersion = fableCompilerVersion
             }
     with ex ->

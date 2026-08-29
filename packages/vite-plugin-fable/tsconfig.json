@@ -8,6 +8,8 @@
     "moduleResolution": "NodeNext",
     "jsx": "react",
     "declaration": true,
+    // `@internal` members are implementation seams for the tests, not public API.
+    "stripInternal": true,
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "./src"

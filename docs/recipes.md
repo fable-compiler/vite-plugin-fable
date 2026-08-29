@@ -8,6 +8,37 @@ category: docs
 
 There are a few things you can configure in the plugin configuration.
 
+## Plugin options
+
+Every option the plugin accepts. All of them are optional.
+
+| Option          | Type                                               | Default                            | What it does                                                                    |
+| --------------- | -------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
+| `fsproj`        | `string`                                           | the single `.fsproj` in the root   | The entry project. See [Alternative fsproj](#alternative-fsproj).               |
+| `configuration` | `"Debug" \| "Release"`                             | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#debug-or-release).               |
+| `jsx`           | `"automatic" \| "transform" \| "preserve" \| null` | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#fablecorejsx).          |
+| `noReflection`  | `boolean`                                          | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output. |
+| `exclude`       | `string[]`                                         | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins. |
+
+`noReflection` and `exclude` are handed to Fable.Compiler unchanged; they mean what they mean for
+the `dotnet fable` CLI. Changing either invalidates the plugin's build caches, so you do not need
+to clear `obj/` yourself.
+
+Unknown or badly typed options are rejected when the config loads, so a misspelled one fails with
+a message rather than being quietly ignored:
+
+```
+vite-plugin-fable: unknown option "noRefleciton". Did you mean "noReflection"?
+Known options: fsproj, jsx, noReflection, exclude, configuration.
+```
+
+If you write your Vite config in TypeScript you get the same feedback in the editor. The plugin
+exports `PluginOptions` and `FableConfiguration` for when you want to name them:
+
+```ts
+import type { FableConfiguration, PluginOptions } from "vite-plugin-fable";
+```
+
 ## Alternative fsproj
 
 By default, the plugin will look for a single `.fsproj` file inside your Vite [root](https://vite.dev/config/shared-options.html#root), which is the project folder unless you changed it.
