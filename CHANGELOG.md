@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Plugin options are validated when the config loads. An unknown or badly typed option now fails with a message naming it (and suggesting the intended one) instead of being merged in and ignored, which in a `vite.config.js` was invisible.
+- The package exports its `PluginOptions` and `FableConfiguration` types and declares an `exports` map, so a `vite.config.ts` can name what it passes in. The internal test seam no longer appears in the published type surface.
+- All plugin options are documented, including `noReflection` and `exclude`, which were never mentioned anywhere.
+- Changing the `noReflection` or `exclude` plugin options invalidates the caches. Both change what Fable emits but neither was part of the design time build cache key, so the previous build was reused and stale JavaScript was served with nothing to indicate it. The cached data now carries a format version too, so caches written before this fix are discarded rather than compared against fields they never stored.
 - The MSBuild configuration follows the Vite command rather than `env.MODE`, so `vite build --mode staging` no longer compiles Debug F# into a production bundle. A new `configuration` plugin option overrides it, defaulting to `Release` for `vite build` and `Debug` for `vite dev`.
 - The `transform` hook reports `map: { mappings: "" }` instead of `map: null`. `null` claims the previous source mapping still applies, which made later stages emit a map labelling the compiled JavaScript as the contents of a `.fs` file — devtools showed an F# filename containing JavaScript. Real F#-to-JS source maps remain blocked on Fable.
 - Compiled output is now keyed off what the daemon returned rather than looked up per source file. The two sets differ (signature files are never compiled), and indexing the daemon's map with an already-normalised path would have yielded `undefined` for every entry had the daemon ever reported a non-POSIX path.

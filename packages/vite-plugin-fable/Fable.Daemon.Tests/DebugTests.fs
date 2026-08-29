@@ -128,3 +128,58 @@ let ``changing a signature file reports a diagnostic on the implementation`` () 
             client.Dispose ()
             (daemon :> IDisposable).Dispose()
     }
+
+/// The design time build cache is keyed on everything that changes what Fable emits. Options that
+/// only live in the Vite config used to be left out, so flipping one served stale JavaScript.
+module CacheKeyTests =
+
+    open Fable.Compiler.ProjectCracker
+
+    let private emptyResponse : ProjectOptionsResponse =
+        {
+            ProjectOptions = [| "--define:FABLE_COMPILER" |]
+            ProjectReferences = Array.empty
+            OutputType = None
+            TargetFramework = Some "net10.0"
+        }
+
+    /// A cache key pointing at a scratch file, so writing one does not touch a real obj folder.
+    let private mkKey (exclude : string list) (noReflection : bool) : Caching.CacheKey =
+        let fsproj =
+            FileInfo (Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../../sample-project/App.fsproj"))
+
+        {
+            MainFsproj = fsproj
+            CacheFile = FileInfo (Path.Combine (Path.GetTempPath (), "vite-plugin-fable-cache-test.bin"))
+            DependentFiles = [ fsproj ]
+            Defines = Set.ofList [ "FABLE_COMPILER" ]
+            Configuration = "Release"
+            Exclude = exclude
+            NoReflection = noReflection
+            FableCompilerVersion = Caching.fableCompilerVersion
+        }
+
+    [<Test>]
+    let ``an unchanged key reuses the cache`` () =
+        let key = mkKey [] false
+        Caching.writeDesignTimeBuild key emptyResponse
+
+        match Caching.canReuseDesignTimeBuildCache key with
+        | Ok _ -> Assert.Pass ()
+        | Error reason -> Assert.Fail $"expected the cache to be reusable, got %A{reason}"
+
+    [<Test>]
+    let ``changing noReflection invalidates the cache`` () =
+        Caching.writeDesignTimeBuild (mkKey [] false) emptyResponse
+
+        match Caching.canReuseDesignTimeBuildCache (mkKey [] true) with
+        | Error (Caching.InvalidCacheReason.NoReflectionMismatch (false, true)) -> Assert.Pass ()
+        | other -> Assert.Fail $"expected a NoReflection mismatch, got %A{other}"
+
+    [<Test>]
+    let ``changing exclude invalidates the cache`` () =
+        Caching.writeDesignTimeBuild (mkKey [] false) emptyResponse
+
+        match Caching.canReuseDesignTimeBuildCache (mkKey [ "Some.Plugin" ] false) with
+        | Error (Caching.InvalidCacheReason.ExcludeMismatch ([], [ "Some.Plugin" ])) -> Assert.Pass ()
+        | other -> Assert.Fail $"expected an Exclude mismatch, got %A{other}"

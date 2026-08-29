@@ -13,6 +13,7 @@ import type {
 import colors from "picocolors";
 import { codeFrameColumns } from "@babel/code-frame";
 import { startDaemon } from "./daemon.js";
+import { resolveOptions } from "./options.js";
 import type {
   BatchResult,
   DaemonLogger,
@@ -21,15 +22,15 @@ import type {
   PluginOptions,
   PluginState,
   ProjectFileData,
-  ResolvedPluginOptions,
 } from "./types.js";
+
+// The public type surface, so a `vite.config.ts` can name what it passes in.
+export type { FableConfiguration, PluginOptions } from "./types.js";
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
 if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
   console.log(`Running daemon in debug mode, visit http://localhost:9014 to view logs`);
 }
-
-const defaultConfig: ResolvedPluginOptions = { jsx: null, noReflection: false, exclude: [] };
 
 /**
  * Initializes and returns a Vite plugin to process the incoming F# project.
@@ -51,7 +52,7 @@ export function createFablePlugin(
   createDaemon: (logger: DaemonLogger) => FableDaemon,
 ): Plugin {
   const state: PluginState = {
-    config: Object.assign({}, defaultConfig, userConfig),
+    config: resolveOptions(userConfig),
     compilableFiles: new Map(),
     sourceFiles: new Set(),
     fsproj: null,
