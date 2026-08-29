@@ -1,14 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizePath } from "vite";
 import type { Logger, Plugin, ResolvedConfig } from "vite";
 import { createFablePlugin } from "../src/index.js";
 import { createStubDaemon, type StubDaemon, type StubDaemonOptions } from "./daemon.stub.js";
 import type { DaemonOptions, Diagnostic, PluginOptions, ProjectRequest } from "../src/types.js";
 
-const sampleProject: string = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../sample-project",
+// Normalised, because that is what the plugin is handed: Vite resolves `root` and every id to
+// posix separators. Building these with a literal `/` on top of a Windows `path.resolve` produced
+// mixed separators that matched nothing the plugin had normalised.
+const sampleProject: string = normalizePath(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../sample-project"),
 );
 const mathFs = `${sampleProject}/Math.fs`;
 const libraryFs = `${sampleProject}/Library.fs`;
@@ -349,7 +352,7 @@ describe("buildStart", () => {
     // A `Directory.Build.props` above the Vite root still decides what Fable compiles, and the dev
     // watcher does not cover it. Files under the root are already watched, so adding them again
     // would be work for nothing — this is the same rule Vite's own `ensureWatchedFile` applies.
-    const outsideRoot = `${path.dirname(sampleProject)}/Directory.Build.props`;
+    const outsideRoot = `${normalizePath(path.dirname(sampleProject))}/Directory.Build.props`;
     const h: Harness = harness(
       {},
       { sourceFiles: [mathFs], dependentFiles: [appFsproj, outsideRoot] },
