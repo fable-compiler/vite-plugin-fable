@@ -56,7 +56,7 @@ interface EnvironmentStub {
   sent: unknown[];
 }
 
-type TransformOutput = { code: string; map: null } | undefined;
+type TransformOutput = { code: string; map: { mappings: "" } } | undefined;
 
 interface Harness {
   plugin: Plugin;
@@ -284,6 +284,33 @@ describe("transform", () => {
     await h.start();
     const result: TransformOutput = await h.transform(mathFs);
     expect(result?.code).toBe("export const sum = 1;");
+  });
+
+  test("signals that the source mapping was lost rather than preserved", async () => {
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "export const sum = 1;" } },
+    );
+    await h.start();
+    // `null` would tell Vite the previous mapping still applies, and it would then build a map
+    // claiming the JavaScript is the contents of a `.fs` file.
+    expect((await h.transform(mathFs))?.map).toEqual({ mappings: "" });
+  });
+
+  test("keys compiled output off what the daemon returned, not the source list", async () => {
+    // The daemon reports signature files as sources but never compiles them.
+    const componentFs = `${sampleProject}/Component.fs`;
+    const componentFsi = `${sampleProject}/Component.fsi`;
+    const h: Harness = harness(
+      {},
+      {
+        sourceFiles: [componentFs, componentFsi],
+        compiled: { [componentFs]: "export const c = 1;" },
+      },
+    );
+    await h.start();
+    expect((await h.transform(componentFs))?.code).toBe("export const c = 1;");
+    expect(await h.transform(componentFsi)).toBeUndefined();
   });
 
   test("returns nothing for an F# file the daemon never compiled", async () => {

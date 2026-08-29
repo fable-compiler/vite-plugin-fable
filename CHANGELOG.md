@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `transform` hook reports `map: { mappings: "" }` instead of `map: null`. `null` claims the previous source mapping still applies, which made later stages emit a map labelling the compiled JavaScript as the contents of a `.fs` file — devtools showed an F# filename containing JavaScript. Real F#-to-JS source maps remain blocked on Fable.
+- Compiled output is now keyed off what the daemon returned rather than looked up per source file. The two sets differ (signature files are never compiled), and indexing the daemon's map with an already-normalised path would have yielded `undefined` for every entry had the daemon ever reported a non-POSIX path.
+- CI runs the daemon test suite; previously only the plugin tests ran.
 - TypeScript `strict` is on. That surfaced a real bug: `configResolved` derived the project directory from `resolvedConfig.configFile`, which is optional, so a project without a Vite config file (or one created programmatically) reached `fs.readdir(undefined)`. It now uses `resolvedConfig.root`, which is always resolved and is also the correct directory when `root` differs from the config file's location. A missing `.fsproj` is now an error rather than a `null` handed to the daemon.
 - oxlint warnings fail the lint instead of being reported and ignored.
 - `sample-project` runs its scripts on the Bun runtime through its own `bunfig.toml` rather than `bunx --bun` in each script, so the scripts are plain `vite`, `vite build` and `vite preview`. Bun only reads the `bunfig.toml` in the directory a command starts from, so the one at the repo root does not cover it.
