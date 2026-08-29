@@ -348,6 +348,34 @@ let tryCompileFiles
             return Error ex.Message
     }
 
+/// The daemon's last resort. stdout carries the JSON-RPC framing so nothing else may be written
+/// there, and `logger` is a `NullLogger` unless VITE_PLUGIN_FABLE_DEBUG is set, which leaves stderr
+/// as the only channel that reaches a user. `startDaemon` forwards it to the Vite logger.
+let private logCritical (logger : ILogger) (message : string) : unit =
+    logger.LogCritical ("{message}", message)
+    eprintfn $"[Fable.Daemon] {message}"
+
+/// Names a message for a log line. Printing the message itself would include the reply channel.
+let private describe (msg : Msg) : string =
+    match msg with
+    | Msg.ProjectChanged (payload, _) -> $"fable/project-changed for {payload.Project}"
+    | Msg.CompileFullProject _ -> "fable/initial-compile"
+    | Msg.CompileFiles (fileNames, _) -> $"""fable/compile for {String.concat ", " fileNames}"""
+    | Msg.Disconnect -> "disconnect"
+
+/// Answers whoever is waiting on `msg`, so a failure surfaces as a failed request rather than one
+/// that never returns.
+let private replyWithError (logger : ILogger) (msg : Msg) (error : string) : unit =
+    try
+        match msg with
+        | Msg.ProjectChanged (_, replyChannel) -> replyChannel.Reply (ProjectChangedResult.Error error)
+        | Msg.CompileFullProject replyChannel -> replyChannel.Reply (FilesCompiledResult.Error error)
+        | Msg.CompileFiles (_, replyChannel) -> replyChannel.Reply (FileChangedResult.Error error)
+        | Msg.Disconnect -> ()
+    with replyFailure ->
+        // Replying twice throws, so the request was already answered and the caller is not stuck.
+        logCritical logger $"Could not report the failure of {describe msg}: {replyFailure}"
+
 type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     let jsonMessageFormatter = new SystemTextJsonFormatter ()
 
@@ -379,10 +407,9 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
 
     let mailbox =
         MailboxProcessor.Start (fun inbox ->
-            let rec loop (model : Model) =
+            /// Serves one message and returns the model to carry on with, or `None` to stop.
+            let handle (model : Model) (msg : Msg) : Async<Model option> =
                 async {
-                    let! msg = inbox.Receive ()
-
                     match msg with
                     | ProjectChanged (payload, replyChannel) ->
                         let! result = tryTypeCheckProject logger model payload
@@ -390,7 +417,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                         match result with
                         | Error error ->
                             replyChannel.Reply (ProjectChangedResult.Error error)
-                            return! loop model
+                            return Some model
                         | Ok result ->
 
                         replyChannel.Reply (
@@ -401,8 +428,8 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                             )
                         )
 
-                        return!
-                            loop
+                        return
+                            Some
                                 { model with
                                     CrackerInput = Some result.CrackerInput
                                     Checker = result.Checker
@@ -415,13 +442,10 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                         let! result = tryCompileProject logger model
 
                         match result with
-                        | Error error ->
-                            replyChannel.Reply (FilesCompiledResult.Error error)
-                            return! loop model
-                        | Ok result ->
-                            replyChannel.Reply (FilesCompiledResult.Success result.CompiledFSharpFiles)
+                        | Error error -> replyChannel.Reply (FilesCompiledResult.Error error)
+                        | Ok result -> replyChannel.Reply (FilesCompiledResult.Success result.CompiledFSharpFiles)
 
-                            return! loop model
+                        return Some model
 
                     | CompileFiles (fileNames, replyChannel) ->
                         let! result = tryCompileFiles logger model fileNames
@@ -433,8 +457,34 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                                 FileChangedResult.Success (result.CompiledFiles, mapDiagnostics result.Diagnostics)
                             )
 
-                        return! loop model
-                    | Disconnect -> return ()
+                        return Some model
+
+                    | Disconnect -> return None
+                }
+
+            let rec loop (model : Model) =
+                async {
+                    let! msg = inbox.Receive ()
+
+                    // Anything escaping `handle` used to kill the agent, and the request that
+                    // provoked it was never answered. `PostAndAsyncReply` has no timeout, so the
+                    // plugin waited on `buildStart` forever with nothing on screen, and every later
+                    // request queued behind a loop that was gone.
+                    let! next =
+                        async {
+                            try
+                                return! handle model msg
+                            with ex ->
+                                logCritical logger $"Serving {describe msg} failed: {ex}"
+                                replyWithError logger msg ex.Message
+                                return Some model
+                        }
+
+                    match next with
+                    | None -> return ()
+                    // Recursing outside the `try` above, so a long-lived agent does not stack one
+                    // exception handler per message it has served.
+                    | Some model -> return! loop model
                 }
 
             loop
@@ -453,8 +503,15 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                 }
         )
 
-    // log or something.
-    let subscription = mailbox.Error.Subscribe (fun evt -> ())
+    // The loop answers and survives its own failures, so reaching here means the agent itself is
+    // gone. It cannot be restarted — the model went with it — and every later request would block
+    // forever on `PostAndAsyncReply`, so stop the process instead. The plugin already turns an
+    // unexpected daemon exit into an error the user sees.
+    let subscription =
+        mailbox.Error.Subscribe (fun ex ->
+            logCritical logger $"The message loop stopped and the daemon cannot serve anything: {ex}"
+            exit 1
+        )
 
     interface IDisposable with
         member _.Dispose () =

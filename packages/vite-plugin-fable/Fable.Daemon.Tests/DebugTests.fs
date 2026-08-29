@@ -2,6 +2,7 @@ module Fable.Daemon.Tests
 
 open System
 open System.IO
+open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open NUnit.Framework
 open Nerdbank.Streams
@@ -125,6 +126,53 @@ let ``changing a signature file reports a diagnostic on the implementation`` () 
             | other -> Assert.Fail $"expected a successful compile response, got %A{other}"
         finally
             File.WriteAllText (signatureFile, originalSignature)
+            client.Dispose ()
+            (daemon :> IDisposable).Dispose()
+    }
+
+/// A request the daemon cannot serve has to come back as an error. `PostAndAsyncReply` has no
+/// timeout, so a message loop that dies instead of answering leaves the plugin waiting inside
+/// `buildStart` forever: no URL printed, no overlay, nothing on screen. The loop therefore answers
+/// every message and carries on, whatever the message did to it.
+[<Test>]
+let ``a request that cannot be served is answered, and the daemon keeps serving`` () =
+    task {
+        let config = sampleApp
+        Directory.SetCurrentDirectory (FileInfo(config.Project).DirectoryName)
+
+        let struct (serverStream, clientStream) = FullDuplexStream.CreatePair ()
+
+        let daemon =
+            new Program.FableServer (serverStream, serverStream, NullLogger.Instance)
+
+        let client = new JsonRpc (clientStream, clientStream)
+        client.StartListening ()
+
+        try
+            // Nothing has been cracked yet, so there is no project to compile this against.
+            let compile =
+                daemon.CompileFiles
+                    {
+                        FileNames =
+                            [|
+                                Path.CombineNormalize (FileInfo(config.Project).Directory.FullName, "Math.fs")
+                            |]
+                    }
+
+            let! answered = Task.WhenAny (compile :> Task, Task.Delay (TimeSpan.FromMinutes 1.))
+            Assert.That (answered, Is.SameAs (compile :> Task), "the daemon never answered the request")
+
+            match compile.Result with
+            | FileChangedResult.Error _ -> ()
+            | other -> Assert.Fail $"expected an error response, got %A{other}"
+
+            // The loop is still alive, so a request it can serve is served.
+            let! projectResponse = daemon.ProjectChanged config
+
+            match projectResponse with
+            | ProjectChangedResult.Success _ -> ()
+            | ProjectChangedResult.Error error -> Assert.Fail $"expected the project to crack, got {error}"
+        finally
             client.Dispose ()
             (daemon :> IDisposable).Dispose()
     }

@@ -244,6 +244,5 @@ The one argument that survives is dogfooding — a real Vite plugin written in F
 - `README.md` still says the package "was merely pushed to reserve the name" and that the project is up for adoption; refresh once direction is settled.
 - Check whether Fable upstream would accept the design-time build cache and dependent-files tracking now living in `ProjectCracking.fs`, so the plugin can shrink further.
 - `ideas.md`: filter diagnostics from `fable_modules` (plugin option) and expose a version property on Fable.Compiler (`Caching.fableCompilerVersion` reads it via reflection today).
-- `mailbox.Error.Subscribe (fun _ -> ())` in `Program.fs` swallows mailbox failures silently.
 - `Fable.Daemon.Tests/DebugTests.fs` references `../../telplin` and `../../fantomas-tools` checkouts; only the sample-project case is portable.
 - The JavaScript tests cover the hooks against a stub daemon (`tests/index.test.ts`). Still missing: integration tests driving `createServer` against `sample-project` with the real daemon, and a contract test asserting the daemon's responses still match what `src/daemon.ts` decodes — that second one is the cheap half of item 8.
