@@ -33,8 +33,8 @@ else's contract:
 `bun run build` in `sample-project` writes `.vite-inspect/reports/` (gitignored):
 
 - `modules.json` — graph, deps, importers, which plugins transformed each module
-- `transforms/*.json` — per module, `__load__` is the F# source and `vite-plugin-fable` is the
-  JavaScript it emitted
+- `transforms/*.json` — per module, the `vite-plugin-fable` step is the JavaScript it emitted. That
+  is its `load`, so there is no `__load__` step holding the F# source; the F# is the file on disk
 
 Use this instead of guessing about transform output. The Vite DevTools panel shows the same thing
 but is injected client-side behind a `#devframe_otp=` fragment, so it is invisible to `curl` —

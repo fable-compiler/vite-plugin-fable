@@ -10,7 +10,6 @@ Order is a rough suggestion: item 1 is what is left of the contract fixes, 4-9 a
 
 - **Real F# source maps are blocked upstream.** `FileWriter.AddSourceMapping` in `~/Projects/Fable/src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out; `CliArgs.SourceMaps` exists but does nothing. Needs a Fable PR first.
   The plugin now returns `{ mappings: '' }`, which stops later stages from producing a map that labels the compiled JavaScript as the contents of a `.fs` file, but a real F#-to-JS mapping needs the Fable change first.
-- **No `load` hook.** Vite reads the whole `.fs` file off disk purely so `transform` can discard it. A `load` for ids in `compilableFiles` skips the I/O and states the intent. Return `moduleType: 'js'` too — `vite:oxc` does (`plugins/oxc.ts:330`) — otherwise rolldown infers the type from the `.fs` extension.
 
 ## 4. Replace the built-in debug server with a Vite DevTools panel
 
@@ -51,7 +50,7 @@ The patch is pinned to `crossws@0.4.12`, so a version bump needs it rebased unti
 
 The DevTools panel is injected client-side behind a `#devframe_otp=` fragment, so nothing about it is visible over HTTP — the served HTML is byte for byte the same with and without it. That makes it useless from a terminal, CI, or an agent.
 
-`Inspect({ build: true })` covers that gap and is configured alongside it in `sample-project/vite.config.js`. A `bun run build` writes `.vite-inspect/reports/`, where `modules.json` holds the graph (deps, importers, which plugins transformed what) and `transforms/*.json` holds each step's output — `__load__` is the F# source and `vite-plugin-fable` is the emitted JavaScript, as plain JSON. Same information as the panel, greppable.
+`Inspect({ build: true })` covers that gap and is configured alongside it in `sample-project/vite.config.js`. A `bun run build` writes `.vite-inspect/reports/`, where `modules.json` holds the graph (deps, importers, which plugins transformed what) and `transforms/*.json` holds each step's output — the `vite-plugin-fable` step is the emitted JavaScript, as plain JSON. Same information as the panel, greppable.
 
 **Also unverified**
 

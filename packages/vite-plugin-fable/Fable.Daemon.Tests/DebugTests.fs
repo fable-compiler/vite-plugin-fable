@@ -130,6 +130,65 @@ let ``changing a signature file reports a diagnostic on the implementation`` () 
             (daemon :> IDisposable).Dispose()
     }
 
+/// The daemon keeps Fable's `File` values between compiles so an unchanged file is not read and
+/// hashed again, and forgets the ones the plugin reports as changed. A change it failed to forget
+/// would be compiled from what the file used to say, and nothing else would notice: no error, just
+/// yesterday's JavaScript. Two edits in a row, because the first is served by a cache that was
+/// filled by the crack and the second by one the compile before it filled.
+[<Test>]
+let ``an edited file is compiled from what it now says`` () =
+    task {
+        let config = sampleApp
+        let projectDir = FileInfo(config.Project).Directory.FullName
+        Directory.SetCurrentDirectory projectDir
+
+        let mathFile = Path.CombineNormalize (projectDir, "Math.fs")
+        // Bytes rather than text: `Math.fs` opens with a BOM, and reading it as a string drops it,
+        // so restoring it as a string would leave the file changed in git.
+        let originalMath = File.ReadAllBytes mathFile
+
+        let struct (serverStream, clientStream) = FullDuplexStream.CreatePair ()
+
+        let daemon =
+            new Program.FableServer (serverStream, serverStream, NullLogger.Instance)
+
+        let client = new JsonRpc (clientStream, clientStream)
+        client.StartListening ()
+
+        let compileMath (literal : int) =
+            task {
+                File.WriteAllText (mathFile, $"module Math\n\nlet sum a b = a + %i{literal}\n")
+                let! response = daemon.CompileFiles { FileNames = [| mathFile |] }
+
+                match response with
+                | FileChangedResult.Success (compiled, _) ->
+                    return
+                        compiled
+                        |> Map.tryPick (fun key javaScript ->
+                            if key.EndsWith ("Math.fs", StringComparison.Ordinal) then
+                                Some javaScript
+                            else
+                                None
+                        )
+                | other -> return failwith $"expected a successful compile response, got %A{other}"
+            }
+
+        try
+            let! _ = daemon.ProjectChanged config
+
+            let! first = compileMath 41
+            Assert.That (first, Is.Not.Null, "the daemon compiled no Math.fs")
+            Assert.That (first.Value, Does.Contain "41")
+
+            let! second = compileMath 42
+            Assert.That (second.Value, Does.Contain "42")
+            Assert.That (second.Value, Does.Not.Contain "41")
+        finally
+            File.WriteAllBytes (mathFile, originalMath)
+            client.Dispose ()
+            (daemon :> IDisposable).Dispose()
+    }
+
 /// A request the daemon cannot serve has to come back as an error. `PostAndAsyncReply` has no
 /// timeout, so a message loop that dies instead of answering leaves the plugin waiting inside
 /// `buildStart` forever: no URL printed, no overlay, nothing on screen. The loop therefore answers
