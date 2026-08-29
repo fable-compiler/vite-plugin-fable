@@ -45,6 +45,11 @@ export interface StubDaemon extends FableDaemon {
    * compile finishes relative to other events.
    */
   blockNextCompile(): () => void;
+  /**
+   * Hold `projectChanged` open until the returned function is called, so a test can watch what the
+   * plugin does while the first crack is still running.
+   */
+  blockNextProjectChange(): () => void;
 }
 
 export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
@@ -54,6 +59,7 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
   let disposeCalls = 0;
   let failure: Error | null = null;
   let blocked: Promise<void> | null = null;
+  let blockedProjectChange: Promise<void> | null = null;
   const compiled: Record<string, string> = options.compiled ?? {};
   let nextCompile: Record<string, string> | null = null;
   let compileDiagnostics: Diagnostic[] = [];
@@ -93,9 +99,23 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
       return resolve;
     },
 
+    blockNextProjectChange(): () => void {
+      let resolve!: () => void;
+      blockedProjectChange = new Promise<void>((r: () => void) => {
+        resolve = r;
+      });
+      return resolve;
+    },
+
     async projectChanged(request: ProjectRequest): Promise<ProjectFileData> {
       guard();
       projectChangedCalls.push(request);
+
+      if (blockedProjectChange) {
+        const gate: Promise<void> = blockedProjectChange;
+        blockedProjectChange = null;
+        await gate;
+      }
       return {
         sourceFiles: options.sourceFiles ?? [],
         diagnostics: options.projectDiagnostics ?? [],

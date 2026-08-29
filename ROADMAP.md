@@ -4,7 +4,7 @@ Captured on 2026-08-29 after a scan of the code base, trimmed as items land. Eac
 
 Items 1-3 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
 
-Order is a rough suggestion: 1-3 are contract fixes and design questions, 4-7 are larger. Item 8 records a decision rather than work.
+Order is a rough suggestion: 1-3 are contract fixes and design questions, 4-9 are larger. Item 10 records a decision rather than work.
 
 ## 1. Hook-contract fixes
 
@@ -150,14 +150,6 @@ Deciding whether a module is safe to re-run needs to know whether its top-level 
 - [ ] Decide whether this is worth pursuing at all. A reload on a non-component edit is not obviously bad, and the component path — the one people iterate on — already works.
 - [ ] If yes, raise the "does this module have top-level effects" question with Fable before building anything on this side.
 
-## 6. Do not block `httpServer.listen` on the first compile
-
-`buildStart` blocks the dev server from listening (`server/index.ts:1104` awaits it before `listen`), so a cold F# compile means no URL printed, no overlay, nothing to look at.
-
-Spawning the daemon in `configureServer`, keeping a `ready` promise, and awaiting it in `load`/`transform` for `.fs` ids only would boot the server instantly and put F# errors in the browser overlay instead of the terminal.
-
-Related: in build mode `buildStart`/`buildEnd` _are_ per-environment (`builder.buildApp`), and the plugin object is shared across environments, so `state.dotnetProcess` would be clobbered if environments ever build concurrently. In dev this is a non-issue — `pluginContainer.ts:334-337` gates `buildStart`/`buildEnd`/`watchChange` to the client environment unless a plugin opts in with `perEnvironmentStartEndDuringDev`.
-
 ## 7. Replace `postinstall` with a prebuilt daemon package
 
 **Why this matters most**
@@ -194,7 +186,7 @@ About **0.74s, roughly 35% faster** with ReadyToRun, very low variance. Caches w
 Not acted on yet, for two reasons:
 
 - **The 35% flatters ReadyToRun.** `sample-project` is five files. JIT cost is roughly fixed — the same FCS code paths get compiled regardless of project size — so on a real project the absolute delta stays near 0.7s while the percentage collapses. Re-measure against something like the telplin or fantomas-tools projects in `DebugTests.fs` before treating 35% as real.
-- **Its value depends on item 6.** Today `buildStart` blocks `httpServer.listen`, so 0.74s is spent staring at a terminal with no URL. If item 6 lands and the dev server starts immediately with F# compiling in the background, the same 0.74s is largely invisible and a five-package matrix stops being worth it.
+- **Its value has already shrunk.** The dev server no longer blocks on the first compile, so the 0.74s is spent behind a server that is already listening rather than in front of a terminal with no URL. That makes a five-package matrix much harder to justify.
 
 Cost if it is ever taken up: five or so packages at 77 MB each to publish (a consumer downloads one), a per-RID CI matrix, `os`/`cpu` platform packages, a resolution shim on the JS side, and a fallback when no platform package matches.
 
@@ -231,7 +223,7 @@ The contract is hand-mirrored today and the mirroring is positional, which is wh
 
 ## 10. Rejected: writing the plugin in F# / Fable
 
-Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` between daemon and plugin; items 5 and 6 deliver that at a fraction of the cost.
+Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` between daemon and plugin; item 8 delivers that at a fraction of the cost.
 
 - Of the roughly fifteen findings in the Vite review, exactly one (`resolvedConfig.configFile` being optional) was a shape bug a type system catches. The rest are semantics — what Vite and Node _do_ — and no type system encodes "returning an empty array from `handleHotUpdate` means send nothing".
 - Hand-written Fable bindings are unverified assertions about someone else's API, and they read as authoritative once written. Consuming Vite's own `.d.ts` means a hook shape change fails the build; a binding just keeps agreeing with itself.

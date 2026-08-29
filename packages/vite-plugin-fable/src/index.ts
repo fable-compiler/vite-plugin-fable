@@ -9,6 +9,7 @@ import type {
   Logger,
   Plugin,
   ResolvedConfig,
+  ViteDevServer,
 } from "vite";
 import colors from "picocolors";
 import { makeIdFiltersToMatchWithQuery } from "@rolldown/pluginutils";
@@ -221,8 +222,10 @@ export function createFablePlugin(
       state.sourceFiles.clear();
       state.compilableFiles.clear();
       state.dependentFiles.clear();
+      projectFailure = null;
       await compileProject(addWatchFile);
     } catch (e) {
+      projectFailure = e instanceof Error ? e : new Error(String(e));
       logCritical(
         "projectChanged",
         `Unexpected failure during projectChanged for ${Array.from(projectFiles)},\n${e}`,
@@ -299,6 +302,16 @@ export function createFablePlugin(
   /** Compiles run one at a time; the daemon holds a single project. */
   let inFlight: Promise<unknown> = Promise.resolve();
   let addWatchFile: (id: string) => void = (): void => {};
+  /**
+   * Settles once the project has been cracked and compiled for the first time. In dev nothing
+   * awaits this before the server listens; `transform` and `hotUpdate` await it instead.
+   */
+  let ready: Promise<void> = Promise.resolve();
+  /**
+   * Why the last crack failed, or `null`. `transform` reports it so the reason reaches the browser
+   * overlay, rather than the request quietly returning F# for Vite to parse as JavaScript.
+   */
+  let projectFailure: Error | null = null;
 
   /** Adds to the open batch, opening one (and its timer) if there is none. */
   function openBatch(): Batch {
@@ -381,6 +394,16 @@ export function createFablePlugin(
     return state.fsproj;
   }
 
+  /** Spawns the daemon and takes ownership of it until `buildEnd`. */
+  function openDaemon(): void {
+    logInfo("daemon", "Starting daemon");
+    state.daemon = createDaemon({
+      info: (message: string): void => logInfo("daemon", message),
+      error: (message: string): void => logError("daemon", message),
+    });
+    process.once("SIGINT", onSigint);
+  }
+
   function requireDaemon(): FableDaemon {
     if (!state.daemon) {
       throw new Error("The Fable daemon is not running.");
@@ -453,26 +476,43 @@ export function createFablePlugin(
         logInfo("configResolved", `Entry fsproj ${state.fsproj}`);
       }
     },
+    // Vite awaits `buildStart` before `httpServer.listen` (`server/index.ts:1104`, reached from the
+    // wrapped `listen` at `:1123`), so cracking there keeps the dev server off its port for the
+    // whole first compile: no URL printed, no overlay, nothing to look at. `configureServer` runs
+    // earlier (`server/index.ts:1008`) and nothing awaits what is started here, so the server boots
+    // straight away and the wait moves to `transform`, where a failure reaches the browser overlay.
+    configureServer(server: ViteDevServer) {
+      // What `this.addWatchFile` does in dev (`server/pluginContainer.ts:867` → `ensureWatchedFile`):
+      // only files outside the root need adding, everything under it is watched already.
+      const rootPrefix: string = `${normalizePath(server.config.root).replace(/\/$/, "")}/`;
+      addWatchFile = (id: string): void => {
+        if (!id.startsWith(rootPrefix)) server.watcher.add(id);
+      };
+
+      logDebug("configureServer", "Initial project crack");
+      // Deliberately not returned or awaited. Rejecting would be an unhandled rejection, so the
+      // failure is recorded for `transform` instead.
+      ready = (async (): Promise<void> => {
+        try {
+          openDaemon();
+          await queueProjectChange(requireFsproj());
+        } catch (e) {
+          projectFailure = e instanceof Error ? e : new Error(String(e));
+          logCritical("configureServer", `Fable could not be started: ${e}`);
+        }
+      })();
+    },
     buildStart: async function () {
+      // A dev server starts the daemon in `configureServer`; this is the build path, where
+      // blocking is right — nothing should be bundled before the F# is compiled.
+      if (!state.isBuild) return;
       try {
         addWatchFile = this.addWatchFile.bind(this);
-        logInfo("buildStart", "Starting daemon");
-        state.daemon = createDaemon({
-          info: (message: string): void => logInfo("daemon", message),
-          error: (message: string): void => logError("daemon", message),
-        });
-        process.once("SIGINT", onSigint);
-
-        const fsproj: string = requireFsproj();
-        if (state.isBuild) {
-          await projectChanged(addWatchFile, new Set([fsproj]));
-        } else {
-          logDebug("buildStart", "Initial project crack");
-          await queueProjectChange(fsproj);
-        }
+        openDaemon();
+        await projectChanged(addWatchFile, new Set([requireFsproj()]));
       } catch (e) {
         logCritical("buildStart", `Unexpected failure during buildStart: ${e}`);
-        if (state.isBuild) throw e;
+        throw e;
       }
     },
     transform: {
@@ -486,6 +526,9 @@ export function createFablePlugin(
       },
       async handler(src, id) {
         logDebug("transform", id);
+        // The dev server listens before the first compile is done, so a request can arrive while
+        // the project is still being cracked. This is the wait that used to sit in `buildStart`.
+        await ready;
         const file: string = cleanUrl(id);
         let code: string | undefined = state.compilableFiles.get(file);
         if (code !== undefined) {
@@ -508,6 +551,10 @@ export function createFablePlugin(
             // with JavaScript. `{ mappings: "" }` is how Vite's own plugins say a map was lost.
             map: { mappings: "" as const },
           };
+        } else if (projectFailure) {
+          // The crack this request waited for is the one that failed, so say why here: in dev this
+          // is what puts the reason in the browser overlay instead of only in the terminal.
+          this.error(`Fable could not compile the project: ${projectFailure.message}`);
         } else if (state.isBuild) {
           // Returning nothing would let Vite parse the F# source as JavaScript, and the user would
           // get a syntax error pointing at `module Foo` instead of the real cause.
@@ -525,6 +572,9 @@ export function createFablePlugin(
     },
     hotUpdate: async function ({ type, file, modules }): Promise<EnvironmentModuleNode[] | void> {
       const environment: DevEnvironment = this.environment;
+      // An edit can land before the first crack has named the project's files. Deciding without
+      // that list would drop the change as "not ours".
+      await ready;
       const normalized: string = normalizePath(file);
 
       // An MSBuild input changed: re-crack, then reload, because the module graph cannot express
