@@ -1,2 +1,5 @@
 [install]
 linker = "isolated"
+
+# Note: `[run] bun = true` only applies to commands started in this directory. Packages that want
+# their scripts on the Bun runtime need their own bunfig.toml, as sample-project does.

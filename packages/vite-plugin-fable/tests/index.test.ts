@@ -30,6 +30,7 @@ function resolvedConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig
     logger: silentLogger,
     env: { MODE: "development" },
     command: "serve",
+    root: sampleProject,
     configFile: `${sampleProject}/vite.config.js`,
     ...overrides,
   } as unknown as ResolvedConfig;
@@ -46,11 +47,6 @@ interface PluginContextStub {
 interface HotModule {
   id: string;
   importers: Set<unknown>;
-}
-
-/** Enough of a dev server for the hot-update hook. */
-interface HotServerStub {
-  hot: { send(payload?: unknown): unknown };
 }
 
 /** Records what the plugin pushes to the browser, and what the module graph holds. */
@@ -173,6 +169,40 @@ describe("configResolved", () => {
     await (h.plugin.configResolved as any).call({}, resolvedConfig());
     await (h.plugin.buildStart as any).call({ addWatchFile: () => {} }, {});
     expect(h.daemon.projectChangedCalls[0].project).toBe(appFsproj);
+  });
+
+  test("finds the fsproj in the Vite root when no option is given", async () => {
+    const daemon: StubDaemon = createStubDaemon({});
+    const plugin: Plugin = createFablePlugin({}, (): StubDaemon => daemon);
+    const context: PluginContextStub = {
+      addWatchFile: (): void => {},
+      error: (message: string): never => {
+        throw new Error(message);
+      },
+    };
+    await (plugin.configResolved as any).call(context, resolvedConfig());
+    await (plugin.buildStart as any).call(context, {});
+    expect(daemon.projectChangedCalls[0].project).toBe(appFsproj);
+  });
+
+  test("fails a build when no fsproj can be found, rather than cracking null", async () => {
+    const daemon: StubDaemon = createStubDaemon({});
+    const plugin: Plugin = createFablePlugin({}, (): StubDaemon => daemon);
+    const context: PluginContextStub = {
+      addWatchFile: (): void => {},
+      error: (message: string): never => {
+        throw new Error(message);
+      },
+    };
+    // `/tmp` has no .fsproj in it.
+    const config: ResolvedConfig = {
+      ...buildConfig(),
+      root: "/tmp",
+    } as unknown as ResolvedConfig;
+    await (plugin.configResolved as any).call(context, config);
+
+    expect((plugin.buildStart as any).call(context, {})).rejects.toThrow(/No .fsproj was found/);
+    expect(daemon.projectChangedCalls).toHaveLength(0);
   });
 
   test("compiles Release for a production build and Debug otherwise", async () => {

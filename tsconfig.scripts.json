@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "noEmit": true,
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true,
     "target": "ESNext",
     "lib": ["ESNext"],
