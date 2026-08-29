@@ -3,7 +3,10 @@ name: PR
 on: [pull_request]
 
 jobs:
-  build:
+  # Formatting, linting and the docs build say the same thing on every OS, so they run once.
+  # `fmt:check` in particular has nothing to gain from a second opinion and something to lose to
+  # line endings.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -32,6 +35,36 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Build docs
+        run: dotnet fsdocs build --noapidocs --projects "$(pwd)/packages/vite-plugin-fable/Fable.Daemon/Fable.Daemon.fsproj"
+
+  # The plugin spawns a child process, normalises paths and shells out to MSBuild, so what it does
+  # is not the same on every OS. `fail-fast: false` because "it broke on Windows only" is the
+  # answer worth having, and it is lost when the first failure cancels the rest.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore solution
+        run: dotnet restore
+
+      - name: Install node_modules
+        run: bun install --frozen-lockfile
+
       - name: Test plugin
         run: bun run test:plugin
 
@@ -44,6 +77,3 @@ jobs:
       - name: Build sample
         run: bun run build
         working-directory: ./sample-project
-
-      - name: Build docs
-        run: dotnet fsdocs build --noapidocs --projects "$(pwd)/packages/vite-plugin-fable/Fable.Daemon/Fable.Daemon.fsproj"

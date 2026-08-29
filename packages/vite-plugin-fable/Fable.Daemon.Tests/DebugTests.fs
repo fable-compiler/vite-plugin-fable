@@ -576,14 +576,22 @@ module DebugServerTests =
             let logger = Debug.InMemoryLogger ()
 
             // A daemon that was killed rather than shut down leaves its discovery file behind, so
-            // starting one sweeps the ones whose process is gone. The pid of a process that has
-            // actually exited, rather than a number assumed to be free: pid 0 is the kernel on
-            // macOS and reports itself alive.
+            // starting one sweeps the ones whose process is gone. A pid that is genuinely not
+            // running, read off the process table rather than assumed: pid 0 is the kernel on
+            // macOS and reports itself alive, and spawning something to exit needs a shell that
+            // differs per OS.
             let deadPid =
-                use finished = System.Diagnostics.Process.Start ("/bin/sh", "-c \"exit 0\"")
+                let running =
+                    System.Diagnostics.Process.GetProcesses ()
+                    |> Array.map (fun p ->
+                        let id = p.Id
+                        p.Dispose ()
+                        id
+                    )
+                    |> Set.ofArray
 
-                finished.WaitForExit ()
-                finished.Id
+                Seq.initInfinite (fun offset -> 40000 + offset)
+                |> Seq.find (fun candidate -> not (running.Contains candidate))
 
             let discoveryFolder =
                 DirectoryInfo (Path.Combine (Path.GetTempPath (), "vite-plugin-fable"))
