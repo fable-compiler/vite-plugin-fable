@@ -2,28 +2,15 @@
 
 Captured on 2026-08-29 after a scan of the code base, trimmed as items land. Each item has enough context to be picked up independently.
 
-Items 1-3 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
+Items 1 and 3 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
 
-Order is a rough suggestion: 1-3 are contract fixes and design questions, 4-9 are larger. Item 10 records a decision rather than work.
+Order is a rough suggestion: 1 and 3 are contract fixes and design questions, 4-9 are larger. Item 10 records a decision rather than work.
 
 ## 1. Hook-contract fixes
 
 - **Real F# source maps are blocked upstream.** `FileWriter.AddSourceMapping` in `~/Projects/Fable/src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out; `CliArgs.SourceMaps` exists but does nothing. Needs a Fable PR first.
   The plugin now returns `{ mappings: '' }`, which stops later stages from producing a map that labels the compiled JavaScript as the contents of a `.fs` file, but a real F#-to-JS mapping needs the Fable change first.
 - **No `load` hook.** Vite reads the whole `.fs` file off disk purely so `transform` can discard it. A `load` for ids in `compilableFiles` skips the I/O and states the intent. Return `moduleType: 'js'` too — `vite:oxc` does (`plugins/oxc.ts:330`) — otherwise rolldown infers the type from the `.fs` extension.
-
-## 2. The JSX handoff to plugin-react works by accident
-
-plugin-react 6 no longer transforms JSX per file. It sets the global `oxc.jsx` option plus `jsxRefreshInclude` in its `config()` hook; Vite's built-in `vite:oxc` then processes any id matching `jsxRefreshFilter` (`plugins/oxc.ts:310`) and forces `lang: 'js'` for non-JS extensions (`plugins/oxc.ts:266-268`).
-
-So in `sample-project/vite.config.js`, `react({ include: /\.fs$/ })` does **nothing for JSX** — it only widens the _refresh_ filter. The plugin's own `transformWithOxc` call is genuinely required. But react-refresh only stays enabled for a `.fs` file because of `plugins/oxc.ts:257-262`: refresh is disabled unless the filename ends in `x` **or the code already contains `react/jsx-runtime`** — true only because the plugin's transform just injected that import.
-
-Consequences: `jsx: "preserve"`, or an `.fs` component file that happens to contain no JSX, silently loses fast refresh.
-
-**To do**
-
-- [ ] Decide deliberately whether the plugin keeps owning the JSX transform. If yes, pass `refresh` through explicitly rather than relying on Vite's `jsx-runtime` sniff.
-- [ ] Comment `sample-project/vite.config.js` and the docs so `include: /\.fs$/` is not mistaken for the thing that makes JSX work.
 
 ## 3. The plugin is too noisy
 

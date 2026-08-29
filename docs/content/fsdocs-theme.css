@@ -25,18 +25,21 @@
   --fable-950: #11305a;
 
   --mohave: Mohave, sans-serif;
-  --header-background: var(--fable-50);
-  --aside-background: var(--fable-50);
-  --page-menu-background-color: var(--fable-50);
+
+  /* fsdocs resolves its own colours with `light-dark()` and only sets `data-theme` once the
+     toggle has written to localStorage (`fsdocs-theme-set-dark.js`). Overriding these under
+     `[data-theme="dark"]` therefore missed a first visit in OS dark mode: fsdocs went dark while
+     these stayed light, putting a pale blue header on a dark page. */
+  --header-background: light-dark(var(--fable-50), var(--fable-900));
+  --header-border: light-dark(var(--fable-100), var(--fable-950));
+
+  /* Since fsdocs 22.0.1 the aside, page menu, mobile menu, blockquotes and dialogs all derive
+     from these two, so they no longer need setting one by one. */
+  --panel-background: var(--header-background);
+  --panel-border: var(--header-border);
+
   --header-brand-text-transform: uppercase;
   --heading-font-family: var(--mohave);
-}
-
-[data-theme="dark"] {
-  --header-background: var(--fable-900);
-  --aside-background: var(--fable-900);
-  --page-menu-background-color: var(--fable-900);
-  --heading-color: white;
 }
 
 header .start strong {
@@ -109,4 +112,69 @@ blockquote > p {
   font-weight: 600;
   font-size: var(--font-500);
   font-family: var(--monospace-font);
+}
+
+/* Tables.
+   fsdocs ships no table styling of its own, so an options table arrives with no rules, no
+   striping, centred headings over left-aligned cells, and a `<p>` around every cell body whose
+   margins push the rows apart.
+
+   Everything here excludes `table.pre`: fsdocs renders every code snippet as
+   `<table class="pre"><tr><td class="snippet"><pre>`, so unscoped `table`/`td` rules restyle code
+   blocks. `white-space: nowrap` on their `code` in particular overrides the `pre` and collapses a
+   whole snippet onto one scrolling line. */
+table:not(.pre) {
+  /* Size to content and scroll when too wide, rather than squeezing columns until values wrap
+     mid-expression. Same approach GitHub uses for markdown tables. */
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin-block: var(--spacing-400);
+  font-size: var(--font-100);
+}
+
+table:not(.pre) :is(th, td) {
+  padding: var(--spacing-100) var(--spacing-200);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+table:not(.pre) thead th {
+  font-family: var(--heading-font-family);
+  font-size: var(--font-200);
+  font-weight: 600;
+  white-space: nowrap;
+  border-bottom: 2px solid var(--fable-600);
+}
+
+/* The `<p>` fsdocs wraps each cell in would otherwise add a blank line inside every row. */
+table:not(.pre) :is(th, td) > p {
+  margin: 0;
+}
+
+table:not(.pre) td > p + p {
+  margin-top: var(--spacing-100);
+}
+
+/* fsdocs emits `tr.odd` / `tr.even`, so striping does not depend on DOM order. A translucent
+   tint reads the same in both colour schemes; the panel blue is too saturated for whole rows. */
+table:not(.pre) tbody tr.odd {
+  background-color: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
+}
+
+table:not(.pre) tbody tr:hover {
+  background-color: var(--menu-item-hover-background);
+}
+
+table:not(.pre) tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+/* Keep a type union like `"automatic" | "transform" | null` on one line. The table scrolls
+   instead of breaking a value in half. */
+table:not(.pre) :is(th, td) code {
+  white-space: nowrap;
 }

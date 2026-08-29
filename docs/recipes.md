@@ -12,13 +12,13 @@ There are a few things you can configure in the plugin configuration.
 
 Every option the plugin accepts. All of them are optional.
 
-| Option          | Type                                               | Default                            | What it does                                                                    |
-| --------------- | -------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
-| `fsproj`        | `string`                                           | the single `.fsproj` in the root   | The entry project. See [Alternative fsproj](#alternative-fsproj).               |
-| `configuration` | `"Debug" \| "Release"`                             | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#debug-or-release).               |
-| `jsx`           | `"automatic" \| "transform" \| "preserve" \| null` | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#fablecorejsx).          |
-| `noReflection`  | `boolean`                                          | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output. |
-| `exclude`       | `string[]`                                         | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins. |
+| Option          | Type                                                    | Default                            | What it does                                                                    |
+| --------------- | ------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
+| `fsproj`        | `string`                                                | the single `.fsproj` in the root   | The entry project. See [Alternative fsproj](#Alternative-fsproj).               |
+| `configuration` | <code>"Debug" &#124; "Release"</code>                   | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#Debug-or-Release).               |
+| `jsx`           | <code>"automatic" &#124; "transform" &#124; null</code> | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#Fable-Core-JSX).        |
+| `noReflection`  | `boolean`                                               | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output. |
+| `exclude`       | `string[]`                                              | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins. |
 
 `noReflection` and `exclude` are handed to Fable.Compiler unchanged; they mean what they mean for
 the `dotnet fable` CLI. Changing either invalidates the plugin's build caches, so you do not need
@@ -102,8 +102,9 @@ Note that the `react` plugin will only apply the fast-refresh wrapper when you s
 
 ### Fable.Core.JSX
 
-Fable can also produce JSX (see [blog](https://fable.io/blog/2022/2022-10-12-react-jsx.html)). In this case, you need to tell the `fable` plugin it should transform the JSX using Babel.
-The `@vitejs/plugin-react` won't interact with any `.fs` files, so that transformation needs to happen in the `fable` plugin:
+Fable can also produce JSX (see [blog](https://fable.io/blog/2022/2022-10-12-react-jsx.html)). Tell
+the `fable` plugin to transform it, and tell `@vitejs/plugin-react` that `.fs` counts as a React
+file:
 
 ```js
 import { defineConfig } from "vite";
@@ -112,15 +113,45 @@ import fable from "vite-plugin-fable";
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    // See `jsx` option from https://esbuild.github.io/api/#transformation
-    fable({ jsx: "automatic" }),
-    react({ include: /\.(fs|js|jsx|ts|tsx)$/ }),
-  ],
+  plugins: [fable({ jsx: "automatic" }), react({ include: /\.fs$/ })],
 });
 ```
 
-Note that you will still need to tweak the `react` plugin with `include` to enable the fast refresh transformation.
+The two options do different jobs, and it is worth knowing which is which.
+
+**The JSX transform is `fable({ jsx })`.** It has to be the plugin that does it. Vite's
+built-in `vite:oxc` forces `lang: "js"` for any id whose extension is not a JavaScript one, which
+disables JSX parsing — so JSX left inside a `.fs` module is a parse error there, not something Vite
+can pick up. That is also why there is no `preserve` value: with `@vitejs/plugin-react` in the
+config the module fails to parse, and without it Vite's import analysis rejects it instead. The
+plugin refuses `preserve` when the config loads rather than letting it fail later.
+
+**Fast Refresh is `react({ include: /\.fs$/ })`.** It does nothing for the JSX
+transform. Without it an F# component still renders, but every edit reloads the page instead of
+updating in place. The plugin warns when it spots this combination, so you do not have to notice it
+yourself:
+
+```text
+  [fable]: configResolved: @vitejs/plugin-react will not apply Fast Refresh to .fs files, so
+  editing an F# component reloads the page instead of updating in place. Add the extension to
+  its filter: react({ include: /\.fs$/ }).
+```
+
+### React Compiler
+
+`@vitejs/plugin-react` 6 can run the React Compiler through `oxc-transform-react`, and it works on
+Fable's output. Install the optional `oxc-transform-react` package and turn it on:
+
+```js
+plugins: [fable({ jsx: "automatic" }), react({ include: /\.fs$/, compiler: true })];
+```
+
+The compiler memoizes F# components the same way it does JavaScript ones — a `Component.fs` picks
+up `react/compiler-runtime` and a `_c(n)` cache — and Fast Refresh keeps working. It is also the
+more robust setup of the two: with `compiler: true` the refresh transform is applied explicitly to
+everything the `include` matches, whereas otherwise Vite only applies it to modules whose emitted
+code imports `react/jsx-runtime`. A component that compiles to no JSX at all therefore keeps Fast
+Refresh under `compiler: true` and loses it without.
 
 ### Plain Fable.React
 

@@ -26,7 +26,8 @@
     "test": "bun run test:plugin && bun run test:daemon",
     "test:plugin": "bun run --cwd packages/vite-plugin-fable test",
     "test:daemon": "dotnet test",
-    "sample": "bun run --cwd sample-project dev"
+    "sample": "bun run --cwd sample-project dev",
+    "docs": "dotnet fsdocs watch --noapidocs --projects packages/vite-plugin-fable/Fable.Daemon/Fable.Daemon.fsproj"
   },
   "devDependencies": {
     "@nojaf/oxlint-plugin-annotate-non-primitives": "^0.1.1",

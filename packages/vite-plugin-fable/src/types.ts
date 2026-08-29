@@ -44,9 +44,13 @@ export interface PluginOptions {
    *
    * `transform` uses the classic runtime, `automatic` the automatic runtime.
    *
+   * There is no `preserve`: Vite cannot import a `.fs` module with JSX left in it. Its own oxc
+   * pass forces `lang: "js"` for a non-JS extension, so the JSX becomes a parse error, and without
+   * that pass import analysis rejects the module instead. The plugin has to finish the job.
+   *
    * @see https://oxc.rs/docs/guide/usage/transformer/jsx
    */
-  jsx?: "transform" | "preserve" | "automatic" | null;
+  jsx?: "transform" | "automatic" | null;
   /** Pass `noReflection` to Fable.Compiler. */
   noReflection?: boolean;
   /** Pass `exclude` to Fable.Compiler. */
