@@ -2,9 +2,9 @@
 
 Captured on 2026-08-29 after a scan of the code base, trimmed as items land. Each item has enough context to be picked up independently.
 
-Items 1-5 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
+Items 1-4 were verified against the Vite 8.2.2 source (`~/Projects/vite`, the version pinned in the workspace catalog) and Fable 5.14 (`~/Projects/Fable`); the `packages/vite/src/node` references below point into that checkout.
 
-Order is a rough suggestion: 1-2 are confirmed bugs, 3-5 are smaller contract fixes and design questions, 6-9 are larger. Item 10 records a decision rather than work.
+Order is a rough suggestion: 1 is a confirmed bug, 2-4 are smaller contract fixes and design questions, 5-8 are larger. Item 9 records a decision rather than work.
 
 ## 1. Migrate `handleHotUpdate` → `hotUpdate` and fix the HMR pipeline
 
@@ -53,17 +53,7 @@ When a dependent file recompiles several F# files, only the originally changed m
 - [ ] Add a test in `Fable.Daemon.Tests` that changes `sample-project/Component.fsi` (e.g. removes the `Component` val) and asserts a diagnostic on `Component.fs`.
 - [ ] Update `types.d.ts`: `import('vite').HMRPayload` is deprecated in favour of `HotPayload` (`vite/types/hmrPayload.d.ts:1`).
 
-## 2. `vite build` succeeds when F# fails
-
-`projectChanged` catches everything (`index.js:254-259`) and `buildStart` catches again (`index.js:430-432`), so a broken project logs and exits 0. `logError` routes through `logger.warn` (`index.js:97`), so Vite never sets its error flag either. `transform` then falls into the `else` at `index.js:456`, returns `undefined`, and Vite hands the raw F# source to the JS parser — the user sees a syntax error pointing at `module Foo` instead of the actual compile error.
-
-**To do**
-
-- [ ] In build mode, call `this.error(...)` on a failed crack/compile and on any `Error` severity diagnostic.
-- [ ] Make `logError` use `logger.error`; keep `logger.warn` for warnings.
-- [ ] Make the `transform` fallback for an uncompiled `.fs` an explicit error instead of passing F# through to the JS parser.
-
-## 3. Hook-contract fixes
+## 2. Hook-contract fixes
 
 - **`map: null` is the wrong signal** (`index.js:454`). In the Rollup/Vite contract `null` means "I did not move code, keep the previous map"; the transform replaces F# with JS. The correct value is `{ mappings: '' }` — what Vite's own plugins use for this case (`plugins/css.ts:583`, `plugins/asset.ts:247`).
   Note: real F# source maps are **blocked upstream**. `FileWriter.AddSourceMapping` in `~/Projects/Fable/src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out; `CliArgs.SourceMaps` exists but does nothing. Needs a Fable PR first.
@@ -74,7 +64,7 @@ When a dependent file recompiles several F# files, only the originally changed m
 - **Path normalisation is asymmetric** (`index.js:234-238` vs `282-285`). `fsharpFileChanged` normalises the daemon's keys before storing them; `compileProject` indexes `compiledFSharpFiles` with an already-normalised name instead. If the daemon ever returns a backslash path, every value in `compilableFiles` becomes `undefined`. Normalise on the way in, in one place.
 - **`.fsx` is matched but never compiled** (`index.js:15`). Script files are never in `compilableFiles`, so every `.fsx` import warns and then fails to parse. Either drop `.fsx` from the regex or handle it.
 
-## 4. The JSX handoff to plugin-react works by accident
+## 3. The JSX handoff to plugin-react works by accident
 
 plugin-react 6 no longer transforms JSX per file. It sets the global `oxc.jsx` option plus `jsxRefreshInclude` in its `config()` hook; Vite's built-in `vite:oxc` then processes any id matching `jsxRefreshFilter` (`plugins/oxc.ts:310`) and forces `lang: 'js'` for non-JS extensions (`plugins/oxc.ts:266-268`).
 
@@ -87,7 +77,7 @@ Consequences: `jsx: "preserve"`, or an `.fs` component file that happens to cont
 - [ ] Decide deliberately whether the plugin keeps owning the JSX transform. If yes, pass `refresh` through explicitly rather than relying on Vite's `jsx-runtime` sniff.
 - [ ] Comment `sample-project/vite.config.js` and the docs so `include: /\.fs$/` is not mistaken for the thing that makes JSX work.
 
-## 5. Do not block `httpServer.listen` on the first compile
+## 4. Do not block `httpServer.listen` on the first compile
 
 `buildStart` blocks the dev server from listening (`server/index.ts:1104` awaits it before `listen`), so a cold F# compile means no URL printed, no overlay, nothing to look at.
 
@@ -95,7 +85,7 @@ Spawning the daemon in `configureServer`, keeping a `ready` promise, and awaitin
 
 Related: in build mode `buildStart`/`buildEnd` _are_ per-environment (`builder.buildApp`), and the plugin object is shared across environments, so `state.dotnetProcess` would be clobbered if environments ever build concurrently. In dev this is a non-issue — `pluginContainer.ts:334-337` gates `buildStart`/`buildEnd`/`watchChange` to the client environment unless a plugin opts in with `perEnvironmentStartEndDuringDev`.
 
-## 6. Replace `postinstall` with a prebuilt daemon package
+## 5. Replace `postinstall` with a prebuilt daemon package
 
 **Why this matters most**
 
@@ -131,7 +121,7 @@ About **0.74s, roughly 35% faster** with ReadyToRun, very low variance. Caches w
 Not acted on yet, for two reasons:
 
 - **The 35% flatters ReadyToRun.** `sample-project` is five files. JIT cost is roughly fixed — the same FCS code paths get compiled regardless of project size — so on a real project the absolute delta stays near 0.7s while the percentage collapses. Re-measure against something like the telplin or fantomas-tools projects in `DebugTests.fs` before treating 35% as real.
-- **Its value depends on item 5.** Today `buildStart` blocks `httpServer.listen`, so 0.74s is spent staring at a terminal with no URL. If item 5 lands and the dev server starts immediately with F# compiling in the background, the same 0.74s is largely invisible and a five-package matrix stops being worth it.
+- **Its value depends on item 4.** Today `buildStart` blocks `httpServer.listen`, so 0.74s is spent staring at a terminal with no URL. If item 4 lands and the dev server starts immediately with F# compiling in the background, the same 0.74s is largely invisible and a five-package matrix stops being worth it.
 
 Cost if it is ever taken up: five or so packages at 77 MB each to publish (a consumer downloads one), a per-RID CI matrix, `os`/`cpu` platform packages, a resolution shim on the JS side, and a fallback when no platform package matches.
 
@@ -147,21 +137,21 @@ Passed over because the bits would then arrive on first `vite dev` rather than a
 - [ ] Resolve the daemon through the module system (`import.meta.resolve`), the way `getFableLibrary` already resolves `fable-library`, replacing the hard-coded `path.join(currentDir, "..", "bin", "Fable.Daemon.dll")`.
 - [ ] Drop `postinstall`, the F# sources and `Directory.*.props` from the published plugin's `files`.
 - [ ] Keep `bun run build:daemon` at the repo root for local work so the sample project runs against the working tree, not the published package.
-- [ ] Give a clear error when the daemon package or the .NET SDK is missing spawn-side detection already fails fast.
+- [ ] Give a clear error when the daemon package cannot be resolved. A missing .NET SDK is already detected spawn-side and fails fast.
 - [ ] README: state that the .NET 10 SDK is required, and why.
 
-## 7. Turn on TypeScript strict mode
+## 6. Turn on TypeScript strict mode
 
-`tsconfig.json` still has `"strict": false`, carried over from the `checkJs` era. That is why the type checker never flagged `resolvedConfig.configFile` being optional (item 3) despite running over the plugin the whole time.
+`tsconfig.json` still has `"strict": false`, carried over from the `checkJs` era. That is why the type checker never flagged `resolvedConfig.configFile` being optional (item 2) despite running over the plugin the whole time.
 
 Kept separate from the TypeScript conversion on purpose: the conversion was mechanical and reviewable as a diff, whereas flipping this flag surfaces real errors that need real fixes.
 
 **To do**
 
-- [ ] Set `"strict": true` and fix what falls out; expect item 3's `configFile` bug to be among it.
-- [ ] Consider `noUncheckedIndexedAccess` as a follow-up — that is the `compiledFSharpFiles[file]` class of bug, also in item 3.
+- [ ] Set `"strict": true` and fix what falls out; expect item 2's `configFile` bug to be among it.
+- [ ] Consider `noUncheckedIndexedAccess` as a follow-up — that is the `compiledFSharpFiles[file]` class of bug, also in item 2.
 
-## 8. Tighten the daemon ↔ plugin RPC contract
+## 7. Tighten the daemon ↔ plugin RPC contract
 
 The contract is hand-mirrored today and the mirroring is positional, which is where it actually hurts. `FSharpDiscriminatedUnion` types `fields` as `any[]`, so the decoding indexes blind: `fields[0]` / `[1]` / `[2]` in `daemon.ts`. Reordering a field in an F# DU case in `Types.fs` silently breaks the plugin with no compile error on either side. That decoding is now confined to `daemon.ts` rather than spread across three call sites, which is what makes this tractable.
 
@@ -169,16 +159,16 @@ The contract is hand-mirrored today and the mirroring is positional, which is wh
 
 - [ ] Return named records from the daemon's JSON-RPC methods instead of positional DU fields (`FSharp.SystemTextJson` is already a dependency), so the wire format is self-describing.
 - [ ] Replace the positional decoding inside `daemon.ts` with a discriminated result type TypeScript can narrow.
-- [ ] Validate at the JSON-RPC boundary only — the three response shapes from `fable/project-changed`, `fable/initial-compile` and `fable/compile`. That is the one place untyped JSON enters the process. Zod or similar; note that a hand-written schema is still a mirror of the daemon's contract, it just fails loudly instead of silently. Validation matters more if item 6 goes the `dotnet tool` route, where a plugin and daemon of different versions can genuinely meet.
+- [ ] Validate at the JSON-RPC boundary only — the three response shapes from `fable/project-changed`, `fable/initial-compile` and `fable/compile`. That is the one place untyped JSON enters the process. Zod or similar; note that a hand-written schema is still a mirror of the daemon's contract, it just fails loudly instead of silently. Validation matters more if item 5 goes the `dotnet tool` route, where a plugin and daemon of different versions can genuinely meet.
 - [ ] Better: generate the types (and schemas) from `Fable.Daemon/Types.fs` at build time so the two cannot drift at all. If this is cheap it beats hand-written schemas.
 
-## 9. Cache invalidation questions
+## 8. Cache invalidation questions
 
 - The design-time build cache key (`Caching.fs`) hashes MSBuild inputs only. Adding/removing a `<Compile Include>` changes the fsproj hash so that is covered, but `Directory.Build.props` files outside `MSBuildAllProjects` (for instance ones pulled in via `Import` with a condition that is false at evaluation time) are not.
 - The `fable_modules` cache (`.vite-plugin-fable-modules`) is written once and only invalidated together with the design-time cache. A change to Fable plugin options (`noReflection`, `exclude`) changes `CliArgs` but not the cache key, so stale `fable_modules` output can be served. `Defines` are in the key; `NoReflection` and `Exclude` are not.
 - `tryCompileProject` compiles with `NoCache = true` in `CliArgs` while the daemon maintains its own cache; confirm nothing in newer Fable.Compiler versions relies on that flag for correctness.
 
-## 10. Rejected: writing the plugin in F# / Fable
+## 9. Rejected: writing the plugin in F# / Fable
 
 Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` between daemon and plugin; items 8 and 9 deliver that at a fraction of the cost.
 
@@ -188,11 +178,11 @@ Recorded so it does not get re-litigated. The motivation was sharing `Types.fs` 
 
 The one argument that survives is dogfooding — a real Vite plugin written in Fable would be genuine exercise for Fable's JS output. That is a project-mission argument rather than an engineering one. Revisit only on those terms.
 
-## 11. Housekeeping (small, can be folded into any of the above)
+## 10. Housekeeping (small, can be folded into any of the above)
 
 - `README.md` still says the package "was merely pushed to reserve the name" and that the project is up for adoption; refresh once direction is settled.
 - Check whether Fable upstream would accept the design-time build cache and dependent-files tracking now living in `ProjectCracking.fs`, so the plugin can shrink further.
 - `ideas.md`: filter diagnostics from `fable_modules` (plugin option) and expose a version property on Fable.Compiler (`Caching.fableCompilerVersion` reads it via reflection today).
 - `mailbox.Error.Subscribe (fun _ -> ())` in `Program.fs` swallows mailbox failures silently.
 - `Fable.Daemon.Tests/DebugTests.fs` references `../../telplin` and `../../fantomas-tools` checkouts; only the sample-project case is portable.
-- The JavaScript tests cover the hooks against a stub daemon (`tests/index.test.ts`). Still missing: integration tests driving `createServer` against `sample-project` with the real daemon, and a contract test asserting the daemon's responses still match what `src/daemon.ts` decodes — that second one is the cheap half of item 8.
+- The JavaScript tests cover the hooks against a stub daemon (`tests/index.test.ts`). Still missing: integration tests driving `createServer` against `sample-project` with the real daemon, and a contract test asserting the daemon's responses still match what `src/daemon.ts` decodes — that second one is the cheap half of item 7.

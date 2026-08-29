@@ -38,6 +38,8 @@ function resolvedConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig
 /** The slice of Vite's plugin context the hooks actually reach for. */
 interface PluginContextStub {
   addWatchFile(id: string): void;
+  /** Rollup's `this.error` throws, and the plugin relies on that to abort a build. */
+  error(message: string): never;
 }
 
 /** The shape `handleHotUpdate` receives for each affected module. */
@@ -75,6 +77,9 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
     addWatchFile: (id: string): void => {
       watched.push(id);
     },
+    error: (message: string): never => {
+      throw new Error(message);
+    },
   };
 
   return {
@@ -88,6 +93,22 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
     async transform(id: string): Promise<TransformOutput> {
       return (plugin.transform as any).handler.call(context, "", id);
     },
+  };
+}
+
+/** A config for `vite build`, where failures should be fatal. */
+function buildConfig(): ResolvedConfig {
+  return resolvedConfig({ env: { MODE: "production" } as any, command: "build" as const });
+}
+
+/** An error-severity diagnostic pointing at `file`. */
+function errorAt(file: string): Diagnostic {
+  return {
+    errorNumberText: "FS0001",
+    message: "This expression was expected to have type int",
+    range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 5 },
+    severity: "Error",
+    fileName: file,
   };
 }
 
@@ -143,12 +164,34 @@ describe("buildStart", () => {
     expect(h.watched).toContain(appFsproj);
   });
 
-  test("does not throw when the daemon is unavailable", async () => {
+  test("fails the build when the daemon is unavailable", async () => {
     const h: Harness = harness();
     h.daemon.failWith(new Error("Could not spawn `dotnet`"));
-    // Today the failure is only logged. When roadmap item 2 lands this should reject in build mode.
+    expect(h.start(buildConfig())).rejects.toThrow(/Could not spawn/);
+  });
+
+  test("fails the build on an F# error diagnostic", async () => {
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], projectDiagnostics: [errorAt(mathFs)] },
+    );
+    expect(h.start(buildConfig())).rejects.toThrow(/FS0001/);
+  });
+
+  test("serves in dev despite an F# error, so the overlay can show it", async () => {
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], projectDiagnostics: [errorAt(mathFs)] },
+    );
     await h.start();
-    expect(h.daemon.initialCompileCalls).toBe(0);
+    expect(h.daemon.projectChangedCalls).toHaveLength(1);
+  });
+
+  test("keeps building when the project only produces warnings", async () => {
+    const warning: Diagnostic = { ...errorAt(mathFs), severity: "Warning" };
+    const h: Harness = harness({}, { sourceFiles: [mathFs], projectDiagnostics: [warning] });
+    await h.start(buildConfig());
+    expect(h.daemon.initialCompileCalls).toBe(1);
   });
 });
 
@@ -167,6 +210,14 @@ describe("transform", () => {
     const h: Harness = harness({}, { sourceFiles: [] });
     await h.start();
     expect(await h.transform(`${sampleProject}/Unknown.fs`)).toBeUndefined();
+  });
+
+  test("errors rather than handing raw F# to the JS parser during a build", async () => {
+    const h: Harness = harness({}, { sourceFiles: [] });
+    await h.start(buildConfig());
+    expect(h.transform(`${sampleProject}/Unknown.fs`)).rejects.toThrow(
+      `${sampleProject}/Unknown.fs was not compiled by Fable, so it cannot be bundled.`,
+    );
   });
 
   test("applies the JSX transform when jsx is automatic", async () => {

@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `vite build` now fails when F# does. A cracking or compile failure, or any error-severity diagnostic, aborts the build instead of logging and exiting 0 with broken output; an F# file Fable never compiled is reported rather than handed to the JavaScript parser as raw F#. `vite dev` is unchanged: the server stays up so the browser overlay can show the diagnostic.
+- Plugin errors are logged through Vite's `logger.error` rather than `logger.warn`.
 - oxlint runs over the repository, with `@nojaf/oxlint-plugin-annotate-non-primitives` requiring an explicit type annotation wherever the type is not obvious from the initializer. Every `lint` script runs oxlint before the TypeScript checks, and CI runs them on every PR.
 - `scripts/changelog-updater.js` is now TypeScript and type-checked by `tsconfig.scripts.json`. `docs/scripts/command.js` stays JavaScript: the docs pages load it directly through an import map with no bundler, so porting it would mean adding a build step to a pipeline that has none.
 - The plugin package is laid out as `src/` and `tests/`, with `bun test` covering the Vite hooks against a stub daemon. `bun run test:plugin` runs them; CI runs them on every PR.
