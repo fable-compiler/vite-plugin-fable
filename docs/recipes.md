@@ -10,7 +10,7 @@ There are a few things you can configure in the plugin configuration.
 
 ## Alternative fsproj
 
-By default, the plugin will look for a single `.fsproj` file inside the folder that holds your `vite.config.js` file.
+By default, the plugin will look for a single `.fsproj` file inside your Vite [root](https://vite.dev/config/shared-options.html#root), which is the project folder unless you changed it.
 If you deviate from this setup you can specify the entry `fsproj` file:
 
 ```js
@@ -25,6 +25,23 @@ const fsproj = path.join(currentDir, "fsharp/FantomasTools.fsproj");
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [fable({ fsproj })],
+});
+```
+
+## Debug or Release
+
+The plugin compiles your F# in `Release` for `vite build` and `Debug` for `vite dev`. That follows
+the command, not `--mode`, so `vite build --mode staging` still compiles `Release`.
+
+Override it when you need the other one — a production bundle with assertions left in, say:
+
+```js
+import { defineConfig } from "vite";
+import fable from "vite-plugin-fable";
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [fable({ configuration: "Debug" })],
 });
 ```
 

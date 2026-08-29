@@ -418,8 +418,10 @@ export function createFablePlugin(
     enforce: "pre",
     configResolved: async function (resolvedConfig: ResolvedConfig) {
       state.logger = resolvedConfig.logger;
-      state.configuration = resolvedConfig.env.MODE === "production" ? "Release" : "Debug";
       state.isBuild = resolvedConfig.command === "build";
+      // Keyed off the command, not `env.MODE`: `vite build --mode staging` is still a build, and
+      // reading MODE there compiled the F# in Debug while bundling it as production output.
+      state.configuration = state.config.configuration ?? (state.isBuild ? "Release" : "Debug");
       logDebug("configResolved", `Configuration: ${state.configuration}`);
       // `configFile` is optional — there may not be one at all — while `root` is always resolved.
       const projectDir: string = resolvedConfig.root;

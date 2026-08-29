@@ -32,6 +32,9 @@ export interface Diagnostic {
   fileName: string;
 }
 
+/** The MSBuild configuration the F# project is compiled with. */
+export type FableConfiguration = "Debug" | "Release";
+
 /** Options for configuring the plugin. */
 export interface PluginOptions {
   /** The main fsproj to load. Defaults to the single `.fsproj` found next to the Vite config. */
@@ -48,11 +51,18 @@ export interface PluginOptions {
   noReflection?: boolean;
   /** Pass `exclude` to Fable.Compiler. */
   exclude?: string[];
+  /**
+   * The MSBuild configuration to compile with.
+   *
+   * Defaults to `Release` for `vite build` and `Debug` for `vite dev`, whatever `--mode` says:
+   * a custom mode name is still a build.
+   */
+  configuration?: FableConfiguration;
 }
 
 /** {@link PluginOptions} once the defaults have been applied, so nothing is optional. */
-export type ResolvedPluginOptions = Required<Omit<PluginOptions, "fsproj">> &
-  Pick<PluginOptions, "fsproj">;
+export type ResolvedPluginOptions = Required<Omit<PluginOptions, "fsproj" | "configuration">> &
+  Pick<PluginOptions, "fsproj" | "configuration">;
 
 /** Everything the plugin instance carries between hook invocations. */
 export interface PluginState {
@@ -68,8 +78,8 @@ export interface PluginState {
   sourceFiles: Set<string>;
   /** The entry project file. */
   fsproj: string | null;
-  /** The MSBuild configuration to compile with, `Debug` or `Release`. */
-  configuration: string;
+  /** The MSBuild configuration to compile with. */
+  configuration: FableConfiguration;
   /** MSBuild files that trigger a full re-crack when changed. */
   dependentFiles: Set<string>;
   /** Whether Vite was invoked with `build` rather than `serve`. */
@@ -104,8 +114,8 @@ export interface DaemonLogger {
 
 /** The payload of a `fable/project-changed` request. */
 export interface ProjectRequest {
-  /** The MSBuild configuration to compile with, `Debug` or `Release`. */
-  configuration: string;
+  /** The MSBuild configuration to compile with. */
+  configuration: FableConfiguration;
   /** Absolute path of the entry `.fsproj`. */
   project: string;
   /** Directory of the `@fable-org/fable-library-js` package. */
