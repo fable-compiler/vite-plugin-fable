@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
+## [0.3.1] - 2026-08-29
+
+### Changed
+
+- The README is a getting started guide: requirements, install, the minimal `vite.config.js`, how to import an F# entry point from `index.html`, and the React setup, with everything else linked to the documentation site. It used to describe the package as a name reservation on npm and point readers at the source. The plugin options are linked rather than repeated, so the table has one home.
+
+### Fixed
+
+- The package has a `description` and `keywords`. Both were empty, so npm derived the description from the first line of the README and listed the version badge's Markdown as the package summary.
+
 ## [0.3.0] - 2026-08-29
 
 ### Changed
