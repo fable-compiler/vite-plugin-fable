@@ -1,20 +1,5 @@
 import type { Logger } from "vite";
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Subscription } from "rxjs";
-import type { JSONRPCEndpoint } from "ts-lsp-client";
-
-/**
- * A generic F# discriminated union case with its associated fields, as it arrives over JSON-RPC.
- *
- * The wire format is positional: `fields` mirrors the declaration order of the F# case, so the
- * call sites index into it by number. See roadmap item 9.
- */
-export interface FSharpDiscriminatedUnion {
-  /** The name of the case, mirroring the F# case name. */
-  case: string;
-  /** The fields associated with the case, in declaration order. */
-  fields: any[];
-}
 
 /** Options for an F# project. */
 export interface FSharpProjectOptions {
@@ -72,10 +57,8 @@ export interface PluginState {
   config: PluginOptions;
   /** Vite's logger once `configResolved` ran, a console-backed stand-in before that. */
   logger: Logger;
-  /** The spawned `Fable.Daemon` process, or `null` before `buildStart`. */
-  dotnetProcess: ChildProcessWithoutNullStreams | null;
-  /** JSON-RPC endpoint talking to {@link PluginState.dotnetProcess} over stdio. */
-  endpoint: JSONRPCEndpoint | null;
+  /** The running daemon, or `null` before `buildStart` and after `buildEnd`. */
+  daemon: FableDaemon | null;
   /** Compiled JavaScript per normalized F# source path, served from the `transform` hook. */
   compilableFiles: Map<string, string>;
   /** Every normalized source file in the project, including signature files. */
@@ -129,4 +112,50 @@ export interface ProjectFileData {
   diagnostics: Diagnostic[];
   /** MSBuild files to watch for a re-crack. */
   dependentFiles: string[];
+}
+
+/** What the plugin needs from a logger; kept minimal so tests can pass a stub. */
+export interface DaemonLogger {
+  info(message: string): void;
+  error(message: string): void;
+}
+
+/** The payload of a `fable/project-changed` request. */
+export interface ProjectRequest {
+  /** The MSBuild configuration to compile with, `Debug` or `Release`. */
+  configuration: string;
+  /** Absolute path of the entry `.fsproj`. */
+  project: string;
+  /** Directory of the `@fable-org/fable-library-js` package. */
+  fableLibrary: string;
+  /** Passed through to Fable.Compiler. */
+  exclude: string[];
+  /** Passed through to Fable.Compiler. */
+  noReflection: boolean;
+}
+
+/** The result of compiling a set of changed F# files. */
+export interface CompileResult {
+  /** Compiled JavaScript per source file path, as the daemon reported it. */
+  compiledFiles: Record<string, string>;
+  /** Diagnostics produced while compiling. */
+  diagnostics: Diagnostic[];
+}
+
+/**
+ * A running Fable daemon.
+ *
+ * Implementations own the underlying process for their whole lifetime; nothing about how the
+ * daemon is spawned or how its JSON-RPC wire format is shaped is visible here. Every method
+ * rejects if the daemon is gone rather than awaiting a reply that will never arrive.
+ */
+export interface FableDaemon {
+  /** Cracks and type-checks the project. Nothing is compiled yet. */
+  projectChanged(request: ProjectRequest): Promise<ProjectFileData>;
+  /** Compiles the whole project, returning compiled JavaScript per source file path. */
+  initialCompile(): Promise<Record<string, string>>;
+  /** Recompiles the given files and whatever depends on them. */
+  compile(files: string[]): Promise<CompileResult>;
+  /** Stops the daemon. Safe to call more than once. */
+  dispose(): void;
 }

@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The daemon lives behind a `FableDaemon` interface in its own module. Process lifetime, the JSON-RPC endpoint and the positional wire format no longer leak into the plugin, which can now be run against a stub daemon in tests.
+- The daemon process is spawned without a shell, so a `dotnet` that is not on `PATH` now fails immediately with an actionable message instead of hanging the dev server forever. Its stderr is drained (an undrained pipe would deadlock the daemon once the buffer filled), requests fail fast if the daemon exits, and the daemon is also stopped on `SIGINT`.
 - `dotnet msbuild` invocations for the cache key no longer give up after 5 seconds and now fail on a non-zero exit code.
 
 ## [0.2.1] - 2025-10-23

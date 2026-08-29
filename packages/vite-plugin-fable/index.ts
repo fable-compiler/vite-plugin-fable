@@ -1,8 +1,6 @@
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { JSONRPCEndpoint } from "ts-lsp-client";
 import { normalizePath, transformWithOxc } from "vite";
 import type { HotPayload, Logger, ModuleNode, Plugin, ResolvedConfig } from "vite";
 import { filter, map, bufferTime, Subject } from "rxjs";
@@ -10,9 +8,10 @@ import colors from "picocolors";
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/withResolvers
 import withResolvers from "promise.withresolvers";
 import { codeFrameColumns } from "@babel/code-frame";
+import { startDaemon } from "./daemon.js";
 import type {
   Diagnostic,
-  FSharpDiscriminatedUnion,
+  FableDaemon,
   HookEvent,
   PendingChangesState,
   PluginOptions,
@@ -23,11 +22,6 @@ import type {
 withResolvers.shim();
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-
-// The plugin is emitted to `dist/`, the daemon is published to `bin/` at the package root.
-const fableDaemon = path.join(currentDir, "..", "bin", "Fable.Daemon.dll");
-
 if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
   console.log(`Running daemon in debug mode, visit http://localhost:9014 to view logs`);
 }
@@ -46,8 +40,7 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
     configuration: "Debug",
     dependentFiles: new Set(),
     logger: { info: console.log, warn: console.warn, error: console.error } as unknown as Logger,
-    dotnetProcess: null,
-    endpoint: null,
+    daemon: null,
     pendingChanges: null,
     hotPromiseWithResolvers: null,
     isBuild: false,
@@ -110,41 +103,15 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
   /**
    * Retrieves the project file. At this stage the project is type-checked but Fable did not compile anything.
    * @param fableLibrary - Location of the fable-library node module.
-   * @throws If the result from the endpoint is not a success case.
    */
   async function getProjectFile(fableLibrary: string): Promise<ProjectFileData> {
-    const result: FSharpDiscriminatedUnion = await state.endpoint.send("fable/project-changed", {
+    return requireDaemon().projectChanged({
       configuration: state.configuration,
       project: state.fsproj,
       fableLibrary,
       exclude: state.config.exclude,
       noReflection: state.config.noReflection,
     });
-
-    if (result.case === "Success") {
-      return {
-        sourceFiles: result.fields[0],
-        diagnostics: result.fields[1],
-        dependentFiles: result.fields[2],
-      };
-    } else {
-      throw new Error(result.fields[0] || "Unknown error occurred");
-    }
-  }
-
-  /**
-   * Try and compile the entire project using Fable. The daemon contains all the information at this point to do this.
-   * No need to pass any additional info.
-   * @throws If the result from the endpoint is not a success case.
-   */
-  async function tryInitialCompile(): Promise<Record<string, string>> {
-    const result: FSharpDiscriminatedUnion = await state.endpoint.send("fable/initial-compile");
-
-    if (result.case === "Success") {
-      return result.fields[0];
-    } else {
-      throw new Error(result.fields[0] || "Unknown error occurred");
-    }
   }
 
   function formatDiagnostic(diagnostic: Diagnostic): string {
@@ -186,7 +153,7 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
       state.dependentFiles.add(dependentFile);
       addWatchFile(dependentFile);
     }
-    const compiledFSharpFiles = await tryInitialCompile();
+    const compiledFSharpFiles = await requireDaemon().initialCompile();
     logInfo("compileProject", `Full compile completed of ${state.fsproj}`);
     state.sourceFiles.forEach((file) => {
       addWatchFile(file);
@@ -221,33 +188,17 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
    */
   async function fsharpFileChanged(files: string[]): Promise<Diagnostic[]> {
     try {
-      const compilationResult: FSharpDiscriminatedUnion = await state.endpoint.send(
-        "fable/compile",
-        {
-          fileNames: files,
-        },
-      );
-      if (
-        compilationResult.case === "Success" &&
-        compilationResult.fields &&
-        compilationResult.fields.length > 0
-      ) {
-        const compiledFSharpFiles: Record<string, string> = compilationResult.fields[0];
+      const { compiledFiles, diagnostics } = await requireDaemon().compile(files);
 
-        logDebug("fsharpFileChanged", `\n${Object.keys(compiledFSharpFiles).join("\n")} compiled`);
+      logDebug("fsharpFileChanged", `\n${Object.keys(compiledFiles).join("\n")} compiled`);
 
-        for (const [key, value] of Object.entries(compiledFSharpFiles)) {
-          const normalizedFileName = normalizePath(key);
-          state.compilableFiles.set(normalizedFileName, value);
-        }
-
-        const diagnostics: Diagnostic[] = compilationResult.fields[1];
-        logDiagnostics(diagnostics);
-        return diagnostics;
-      } else {
-        logError("watchChange", `compilation of ${files} failed, ${compilationResult.fields[0]}`);
-        return [];
+      for (const [key, value] of Object.entries(compiledFiles)) {
+        const normalizedFileName = normalizePath(key);
+        state.compilableFiles.set(normalizedFileName, value);
       }
+
+      logDiagnostics(diagnostics);
+      return diagnostics;
     } catch (e) {
       logCritical(
         "watchChange",
@@ -274,6 +225,25 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
       logWarn("pendingChanges", `Unexpected pending change ${e}`);
       return acc;
     }
+  }
+
+  function requireDaemon(): FableDaemon {
+    if (!state.daemon) {
+      throw new Error("The Fable daemon is not running.");
+    }
+    return state.daemon;
+  }
+
+  /**
+   * Vite only installs a SIGTERM listener, and its close path is what reaches `buildEnd`. Ctrl+C
+   * signals the whole foreground process group in a terminal, but a SIGINT aimed at this process
+   * alone would leave the daemon running, so clean it up here. Node stops exiting by default once a
+   * SIGINT listener exists, hence the explicit exit.
+   */
+  function onSigint(): void {
+    state.daemon?.dispose();
+    state.daemon = null;
+    process.exit(130);
   }
 
   async function makeHmrError(diagnostic: Diagnostic): Promise<HotPayload> {
@@ -329,11 +299,11 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
     buildStart: async function () {
       try {
         logInfo("buildStart", "Starting daemon");
-        state.dotnetProcess = spawn("dotnet", [fableDaemon, "--stdio"], {
-          shell: true,
-          stdio: "pipe",
+        state.daemon = startDaemon({
+          info: (message) => logInfo("daemon", message),
+          error: (message) => logError("daemon", message),
         });
-        state.endpoint = new JSONRPCEndpoint(state.dotnetProcess.stdin, state.dotnetProcess.stdout);
+        process.once("SIGINT", onSigint);
 
         if (state.isBuild) {
           await projectChanged(this.addWatchFile.bind(this), new Set([state.fsproj]));
@@ -444,9 +414,9 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
     },
     buildEnd: () => {
       logInfo("buildEnd", "Closing daemon");
-      if (state.dotnetProcess) {
-        state.dotnetProcess.kill();
-      }
+      process.off("SIGINT", onSigint);
+      state.daemon?.dispose();
+      state.daemon = null;
       if (state.pendingChanges) {
         state.pendingChanges.unsubscribe();
       }
