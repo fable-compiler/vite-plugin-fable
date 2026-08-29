@@ -12,7 +12,7 @@ open Fable.Compiler.ProjectCracker
 /// and remembers the files that influence the MSBuild evaluation so the plugin can watch them.
 type CachedMSBuildCrackerResolver(logger : ILogger) =
     let inner = MSBuildCrackerResolver () :> ProjectCrackerResolver
-    let cached = ConcurrentDictionary<FullPath, Caching.CacheKey> ()
+    let cached = ConcurrentDictionary<FullPath, Caching.CacheKey>()
 
     let tryGetCacheKey (fsproj : FullPath) =
         match cached.TryGetValue fsproj with

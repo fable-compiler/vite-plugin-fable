@@ -18,8 +18,7 @@ let FableModulesExtension = ".vite-plugin-fable-modules"
 let fableCompilerVersion =
     let assembly = typeof<CrackerOptions>.Assembly
 
-    let attribute =
-        assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute> ()
+    let attribute = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
 
     attribute.InformationalVersion
 
@@ -29,7 +28,7 @@ type FileInfo with
         use sha256 = System.Security.Cryptography.SHA256.Create ()
         use stream = File.OpenRead this.FullName
         let hash = sha256.ComputeHash stream
-        BitConverter.ToString(hash).Replace ("-", "")
+        BitConverter.ToString(hash).Replace("-", "")
 
 [<RequireQualifiedAccess>]
 type InvalidCacheReason =
@@ -184,10 +183,10 @@ let private decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json 
         let properties = document.RootElement.GetProperty "Properties"
 
         let getProperty (name : string) =
-            properties.GetProperty(name).GetString ()
+            properties.GetProperty(name).GetString()
 
         let paths =
-            (getProperty "MSBuildAllProjects").Split (';', StringSplitOptions.RemoveEmptyEntries)
+            (getProperty "MSBuildAllProjects").Split(';', StringSplitOptions.RemoveEmptyEntries)
             |> Array.choose (fun path ->
                 let fi = FileInfo path
 
@@ -298,6 +297,6 @@ let writeFableModulesFromCache (cacheKey : CacheKey) (fableModuleFiles : Map<Ful
             { Files = files }
 
         use fs = File.Create cacheKey.FableModulesCacheFile.FullName
-        Serializer.Serialize<FableModulesProto> (fs, proto)
+        Serializer.Serialize<FableModulesProto>(fs, proto)
     finally
         ()

@@ -267,7 +267,9 @@ let rec getDependentFiles
             return! getDependentFiles sourceReader projectOptions checker tail result
         else
 
-        let! nextFiles = checker.GetDependentFiles (head, projectOptions.SourceFiles, sourceReader)
+        let! nextFiles =
+            checker.GetDependentFiles (head, projectOptions.SourceFiles, sourceReader)
+
         let nextResult = (result, nextFiles) ||> Array.fold (fun acc f -> Set.add f acc)
 
         return! getDependentFiles sourceReader projectOptions checker tail nextResult
@@ -355,7 +357,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                 JsonSerializerOptions (PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
 
             let jsonFSharpOptions =
-                JsonFSharpOptions.Default().WithUnionTagName("case").WithUnionFieldsName ("fields")
+                JsonFSharpOptions.Default().WithUnionTagName("case").WithUnionFieldsName("fields")
 
             options.Converters.Add (JsonUnionConverter jsonFSharpOptions)
             options
@@ -471,7 +473,10 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     member _.ProjectChanged (p : ProjectChangedPayload) : Task<ProjectChangedResult> =
         task {
             logger.LogDebug ("enter \"fable/project-changed\" {p}", p)
-            let! response = mailbox.PostAndAsyncReply (fun replyChannel -> Msg.ProjectChanged (p, replyChannel))
+
+            let! response =
+                mailbox.PostAndAsyncReply (fun replyChannel -> Msg.ProjectChanged (p, replyChannel))
+
             logger.LogDebug ("exit \"fable/project-changed\" {response}", response)
             return response
         }
@@ -529,6 +534,6 @@ Log.setLogger Verbosity.Verbose logger
 let daemon =
     new FableServer (Console.OpenStandardOutput (), Console.OpenStandardInput (), logger)
 
-AppDomain.CurrentDomain.ProcessExit.Add (fun _ -> (daemon :> IDisposable).Dispose ())
-daemon.WaitForClose.GetAwaiter().GetResult ()
+AppDomain.CurrentDomain.ProcessExit.Add (fun _ -> (daemon :> IDisposable).Dispose())
+daemon.WaitForClose.GetAwaiter().GetResult()
 exit 0

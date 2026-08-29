@@ -12,6 +12,6 @@ let Component () : JSX.Element =
     let count, setCount = useStateByFunction (0)
 
     fragment [] [
-        h1 [] [ str "React rocks!" ]
+        h1 [] [ str "React roxx" ]
         button [ OnClick (fun _ -> setCount ((+) 1)) ] [ str $"Current state {count}" ]
     ]

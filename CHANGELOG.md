@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MSBuild output is decoded with `System.Text.Json`; the `Thoth.Json.*` dependencies were removed.
 - Sample project targets `net10.0`.
 - GitHub Actions updated to their latest major versions and the workflows read the SDK version from `global.json`.
+- dotnet tools updated: Fantomas 8.0.0-alpha-025, fsdocs-tool 22.1.0, dotnet-outdated-tool 4.8.1. Sources reformatted with Fantomas 8 and CI now runs `dotnet fantomas check .`.
 
 ### Fixed
 - `dotnet msbuild` invocations for the cache key no longer give up after 5 seconds and now fail on a non-zero exit code.

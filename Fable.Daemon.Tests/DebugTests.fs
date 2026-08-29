@@ -79,7 +79,7 @@ let DebugTest () =
 
         printfn "response: %A" compileFiles
         client.Dispose ()
-        (daemon :> IDisposable).Dispose ()
+        (daemon :> IDisposable).Dispose()
 
         Assert.Pass ()
     }

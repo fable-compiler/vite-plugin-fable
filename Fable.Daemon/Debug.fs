@@ -53,10 +53,10 @@ module HTML =
         |> Fable.ReactServer.renderToString
 
 /// Dictionary of client and how many messages they received
-let connectedClients = ConcurrentDictionary<WebSocket, int> ()
+let connectedClients = ConcurrentDictionary<WebSocket, int>()
 
 type InMemoryLogger() =
-    let entries = Queue<LogEntry> ()
+    let entries = Queue<LogEntry>()
 
     let broadCastNewMessages () =
         for KeyValue (client, currentCount) in connectedClients do
