@@ -11,7 +11,6 @@ Order is a rough suggestion: 1-3 are contract fixes and design questions, 4-7 ar
 - **Real F# source maps are blocked upstream.** `FileWriter.AddSourceMapping` in `~/Projects/Fable/src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out; `CliArgs.SourceMaps` exists but does nothing. Needs a Fable PR first.
   The plugin now returns `{ mappings: '' }`, which stops later stages from producing a map that labels the compiled JavaScript as the contents of a `.fs` file, but a real F#-to-JS mapping needs the Fable change first.
 - **No `load` hook.** Vite reads the whole `.fs` file off disk purely so `transform` can discard it. A `load` for ids in `compilableFiles` skips the I/O and states the intent. Return `moduleType: 'js'` too — `vite:oxc` does (`plugins/oxc.ts:330`) — otherwise rolldown infers the type from the `.fs` extension.
-- **`transform.filter` ignores query strings** (`index.js:435`). Vite's convention is `makeIdFiltersToMatchWithQuery` from `@rolldown/pluginutils`, used by Vite itself (`plugins/asset.ts:205`) and by plugin-react. Low impact for the main path — Vite still appends `?import` to bare module URLs (`src/node/utils.ts:308`) but strips it in `transformRequest.ts:497` before the id reaches the plugin container, so `transform` sees a clean absolute path. Explicit queries like `./Component.fs?raw` still fall straight through, and the `compilableFiles.has(id)` lookups should go through `cleanUrl`.
 
 ## 2. The JSX handoff to plugin-react works by accident
 

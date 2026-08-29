@@ -41,6 +41,7 @@
   "dependencies": {
     "@babel/code-frame": "^8.0.0",
     "@fable-org/fable-library-js": "catalog:",
+    "@rolldown/pluginutils": "^1.0.1",
     "picocolors": "^1.1.1",
     "ts-lsp-client": "1.1.1"
   },
