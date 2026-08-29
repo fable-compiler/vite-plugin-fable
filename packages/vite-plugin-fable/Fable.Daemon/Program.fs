@@ -153,6 +153,12 @@ let tryTypeCheckProject
 
                 cliArgs, CrackerOptions (cliArgs, true)
 
+            // Which files the MSBuild evaluation depends on is decided by the evaluation, so the
+            // keys from the previous crack describe the project as it was. Adding a
+            // `Directory.Build.props` or an `<Import>` changes that list, and reusing the old key
+            // would compare the new project against the old one's inputs and find them unchanged.
+            model.Resolver.ForgetCacheKeys ()
+
             let crackerResponse = getFullProjectOpts model.Resolver crackerOptions
 
             logger.LogDebug ("CrackerResponse: {crackerResponse}", crackerResponse)

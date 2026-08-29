@@ -375,14 +375,16 @@ export function createFablePlugin(
   }
 
   /**
-   * The compile for one file change, shared by every environment Vite reports it to.
+   * The work for one file change, shared by every environment Vite reports it to.
    *
    * `handleHMRUpdate` takes a single timestamp per change (`server/hmr.ts:472`) and then hands it
    * to `hotUpdate` once per environment (`:667-676`). Those calls arrive one after another, not
    * together, so the coalescing window has already flushed by the time the second one lands: a dev
    * server with the default `client` and `ssr` environments compiled every edit twice. Keying on
    * the timestamp Vite already computed makes one filesystem change mean one compile, while each
-   * environment still resolves the resulting files against its own module graph.
+   * environment still resolves the resulting files against its own module graph. The same
+   * applies to a re-crack: an MSBuild input reported to two environments cracked the project
+   * twice.
    *
    * A map rather than a single entry, because fan-outs overlap. The watcher calls
    * `onFileChange(file).catch(...)` without awaiting it (`server/index.ts:960-962`), so saving two
@@ -391,22 +393,27 @@ export function createFablePlugin(
    * environment only asks after the previous one's `hotUpdate` returned, which is already after
    * the compile that one awaited.
    */
-  const sharedSourceChanges: Map<string, Promise<BatchResult>> = new Map();
+  const sharedChanges: Map<string, Promise<BatchResult>> = new Map();
 
   /** Room for far more overlap than one fan-out can produce; this is a window, not a cache. */
-  const SHARED_SOURCE_CHANGE_LIMIT: number = 32;
+  const SHARED_CHANGE_LIMIT: number = 32;
 
-  function queueSourceChangeOnce(file: string, timestamp: number): Promise<BatchResult> {
+  /** Queues the work for a change once, however many environments Vite reports it to. */
+  function queueOnce(
+    file: string,
+    timestamp: number,
+    queue: (file: string) => Promise<BatchResult>,
+  ): Promise<BatchResult> {
     const key = `${file}\u0000${timestamp}`;
-    const pending: Promise<BatchResult> | undefined = sharedSourceChanges.get(key);
+    const pending: Promise<BatchResult> | undefined = sharedChanges.get(key);
     if (pending) return pending;
-    const result: Promise<BatchResult> = queueSourceChange(file);
-    sharedSourceChanges.set(key, result);
+    const result: Promise<BatchResult> = queue(file);
+    sharedChanges.set(key, result);
     // One insert can only put it one over, and a map iterates in insertion order, so this drops
     // the oldest change still on record.
-    if (sharedSourceChanges.size > SHARED_SOURCE_CHANGE_LIMIT) {
-      for (const oldest of sharedSourceChanges.keys()) {
-        sharedSourceChanges.delete(oldest);
+    if (sharedChanges.size > SHARED_CHANGE_LIMIT) {
+      for (const oldest of sharedChanges.keys()) {
+        sharedChanges.delete(oldest);
         break;
       }
     }
@@ -663,8 +670,13 @@ export function createFablePlugin(
         };
       },
     },
-    // `hotUpdate` covers dev; this is what reaches the plugin under `vite build --watch`.
+    // What reaches the plugin under `vite build --watch`. A dev server calls this as well
+    // (`server/index.ts:912`, once for the client environment per `pluginContainer.ts:1252-1254`)
+    // on top of calling `hotUpdate` for every environment, and each call used to crack the project
+    // again: one touch of an fsproj meant three full re-cracks. `hotUpdate` is the better hook of
+    // the two in dev, because it can reload the browser afterwards, so this defers to it there.
     watchChange: async function (id: string): Promise<void> {
+      if (!state.isBuild) return;
       if (state.sourceFiles.size !== 0 && state.dependentFiles.has(normalizePath(id))) {
         await queueProjectChange(normalizePath(id));
       }
@@ -685,7 +697,7 @@ export function createFablePlugin(
       // "the whole project was rebuilt".
       if (state.dependentFiles.has(normalized)) {
         logDebug("hotUpdate", `project file ${short(normalized)} changed`);
-        await queueProjectChange(normalized);
+        await queueOnce(normalized, timestamp, queueProjectChange);
         environment.hot.send({ type: "full-reload" });
         return [];
       }
@@ -697,7 +709,7 @@ export function createFablePlugin(
       if (type !== "update") {
         if (!sourceFile && !fsharpFileRegex.test(normalized)) return;
         logDebug("hotUpdate", `${short(normalized)} was ${type}d, re-cracking`);
-        await queueProjectChange(normalized);
+        await queueOnce(normalized, timestamp, queueProjectChange);
         environment.hot.send({ type: "full-reload" });
         return [];
       }
@@ -705,7 +717,7 @@ export function createFablePlugin(
       if (!sourceFile) return;
 
       logDebug("hotUpdate", `enter for ${short(sourceFile)}`);
-      const result: BatchResult = await queueSourceChangeOnce(sourceFile, timestamp);
+      const result: BatchResult = await queueOnce(sourceFile, timestamp, queueSourceChange);
       logDebug("hotUpdate", `leave for ${short(sourceFile)}`);
 
       const errorDiagnostic: Diagnostic | undefined = result.diagnostics.find(

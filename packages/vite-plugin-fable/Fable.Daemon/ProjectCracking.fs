@@ -33,6 +33,17 @@ type CachedMSBuildCrackerResolver(logger : ILogger) =
         | None -> ()
         | Some cacheKey -> Caching.writeFableModulesFromCache cacheKey fableModuleFiles
 
+    /// Drop the remembered cache keys, so the next crack asks MSBuild again which files its
+    /// evaluation depends on.
+    ///
+    /// A key is worth remembering for the length of one crack, where the same project can be
+    /// visited more than once, but not beyond it: `MSBuildAllProjects` is only re-read when a key
+    /// is built, so a key kept across cracks describes the project as it was. Add a
+    /// `Directory.Build.props` or an `<Import>` and the stale key compares the new project against
+    /// the old one's inputs, finds nothing changed, and reuses a design time build that predates
+    /// the file. The new file is also never reported to the plugin, so nothing watches it.
+    member x.ForgetCacheKeys () : unit = cached.Clear ()
+
     /// Get project files to watch inside the plugin
     /// These are the fsproj and potential MSBuild import files
     member x.MSBuildProjectFiles (fsproj : FullPath) : FileInfo list =

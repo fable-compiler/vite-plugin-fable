@@ -130,6 +130,120 @@ let ``changing a signature file reports a diagnostic on the implementation`` () 
             (daemon :> IDisposable).Dispose()
     }
 
+/// MSBuild reports its own failures on stdout and leaves stderr empty, so the exit code is the
+/// only signal worth failing on, and a message built from stderr alone names no reason at all.
+[<Test>]
+let ``a failing dotnet msbuild call reports what MSBuild said`` () =
+    task {
+        let fsproj =
+            FileInfo (Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../../sample-project/App.fsproj"))
+
+        let run =
+            MSBuild.dotnet_msbuild NullLogger.Instance fsproj "-t:NoSuchTarget"
+            |> Async.StartAsTask
+
+        // Also that it comes back at all: draining one pipe to the end before touching the other
+        // can deadlock, and nothing on the way back to the plugin times out.
+        let! finished = Task.WhenAny (run :> Task, Task.Delay (TimeSpan.FromMinutes 2.))
+        Assert.That (finished, Is.SameAs (run :> Task), "dotnet msbuild never came back")
+
+        let error = Assert.Throws<AggregateException>(fun () -> run.Wait ())
+
+        Assert.That (
+            error.InnerException.Message,
+            Does.Contain "MSB4057",
+            "the failure did not say what MSBuild complained about"
+        )
+    }
+
+/// Since MSBuild 16.9 an import no longer adds itself to `MSBuildAllProjects`, so asking for that
+/// property alone reports the fsproj and a handful of SDK targets and misses the file people
+/// actually edit. A `Directory.Build.props` that is not a dependent file is a design time build
+/// cache that survives an edit to it, and a file the plugin never watches.
+[<Test>]
+let ``the project's Directory.Build.props is reported as a file to watch`` () =
+    task {
+        let config = sampleApp
+        let projectDir = FileInfo(config.Project).Directory.FullName
+        Directory.SetCurrentDirectory projectDir
+
+        let directoryBuildProps =
+            Path.CombineNormalize (projectDir, "Directory.Build.props")
+
+        Assert.That (
+            File.Exists directoryBuildProps,
+            Is.True,
+            "the sample project no longer has a Directory.Build.props, so this test proves nothing"
+        )
+
+        let struct (serverStream, clientStream) = FullDuplexStream.CreatePair ()
+
+        let daemon =
+            new Program.FableServer (serverStream, serverStream, NullLogger.Instance)
+
+        let client = new JsonRpc (clientStream, clientStream)
+        client.StartListening ()
+
+        try
+            let! response = daemon.ProjectChanged config
+
+            match response with
+            | ProjectChangedResult.Error error -> Assert.Fail $"expected the project to crack, got {error}"
+            | ProjectChangedResult.Success (_, _, dependentFiles) ->
+
+            Assert.That (
+                dependentFiles |> Array.map Path.GetFullPath,
+                Does.Contain directoryBuildProps,
+                $"""Directory.Build.props was not reported: %s{String.concat ", " dependentFiles}"""
+            )
+        finally
+            client.Dispose ()
+            (daemon :> IDisposable).Dispose()
+    }
+
+/// The resolver forgets its cache keys at the start of every crack, so the next one asks MSBuild
+/// again which files its evaluation depends on. The risk in forgetting them is that nothing fills
+/// them back in: `MSBuildProjectFiles` would then answer with an empty list, the plugin would watch
+/// no MSBuild inputs at all, and editing the fsproj would stop re-cracking the project.
+[<Test>]
+let ``cracking twice still reports the MSBuild files to watch`` () =
+    task {
+        let config = sampleApp
+        Directory.SetCurrentDirectory (FileInfo(config.Project).DirectoryName)
+
+        let struct (serverStream, clientStream) = FullDuplexStream.CreatePair ()
+
+        let daemon =
+            new Program.FableServer (serverStream, serverStream, NullLogger.Instance)
+
+        let client = new JsonRpc (clientStream, clientStream)
+        client.StartListening ()
+
+        let dependentFiles (response : ProjectChangedResult) =
+            match response with
+            | ProjectChangedResult.Success (_, _, dependentFiles) -> dependentFiles
+            | ProjectChangedResult.Error error -> failwith $"expected the project to crack, got {error}"
+
+        try
+            let! first = daemon.ProjectChanged config
+            let! second = daemon.ProjectChanged config
+
+            for response in [ first ; second ] do
+                let files = dependentFiles response
+
+                Assert.That (files, Is.Not.Empty, "no MSBuild files were reported to watch")
+
+                Assert.That (
+                    files
+                    |> Array.exists (fun f -> f.EndsWith ("App.fsproj", StringComparison.Ordinal)),
+                    Is.True,
+                    $"""the project file itself was not reported: %s{String.concat ", " files}"""
+                )
+        finally
+            client.Dispose ()
+            (daemon :> IDisposable).Dispose()
+    }
+
 /// The daemon keeps Fable's `File` values between compiles so an unchanged file is not read and
 /// hashed again, and forgets the ones the plugin reports as changed. A change it failed to forget
 /// would be compiled from what the file used to say, and nothing else would notice: no error, just

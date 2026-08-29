@@ -172,7 +172,7 @@ The contract is hand-mirrored today and the mirroring is positional, which is wh
 
 ## 9. Cache invalidation questions
 
-- The design-time build cache key (`Caching.fs`) hashes MSBuild inputs only. Adding/removing a `<Compile Include>` changes the fsproj hash so that is covered, but `Directory.Build.props` files outside `MSBuildAllProjects` (for instance ones pulled in via `Import` with a condition that is false at evaluation time) are not.
+- The design-time build cache key (`Caching.fs`) hashes MSBuild inputs only, and the list of inputs comes from `MSBuildAllProjects`. Since MSBuild 16.9 an import no longer adds itself to that property, so it now reports the fsproj and a handful of SDK targets and nothing else. `Directory.Build.props`, `Directory.Build.targets` and `Directory.Packages.props` are asked for by name (`DirectoryBuildPropsPath` and friends), which covers what people actually edit, but a file pulled in by an explicit `<Import>` is still invisible: changing it neither invalidates the cache nor re-cracks the project. Getting the real list means `dotnet msbuild -preprocess` or an equivalent, which is a much heavier query than the one property read the cache key does today.
 - `tryCompileProject` compiles with `NoCache = true` in `CliArgs` while the daemon maintains its own cache; confirm nothing in newer Fable.Compiler versions relies on that flag for correctness.
 
 ## 10. Rejected: writing the plugin in F# / Fable
