@@ -73,7 +73,6 @@ When a dependent file recompiles several F# files, only the originally changed m
 - **`transform.filter` ignores query strings** (`index.js:435`). Vite's convention is `makeIdFiltersToMatchWithQuery` from `@rolldown/pluginutils`, used by Vite itself (`plugins/asset.ts:205`) and by plugin-react. Low impact for the main path — Vite still appends `?import` to bare module URLs (`src/node/utils.ts:308`) but strips it in `transformRequest.ts:497` before the id reaches the plugin container, so `transform` sees a clean absolute path. Explicit queries like `./Component.fs?raw` still fall straight through, and the `compilableFiles.has(id)` lookups should go through `cleanUrl`.
 - **Path normalisation is asymmetric** (`index.js:234-238` vs `282-285`). `fsharpFileChanged` normalises the daemon's keys before storing them; `compileProject` indexes `compiledFSharpFiles` with an already-normalised name instead. If the daemon ever returns a backslash path, every value in `compilableFiles` becomes `undefined`. Normalise on the way in, in one place.
 - **`.fsx` is matched but never compiled** (`index.js:15`). Script files are never in `compilableFiles`, so every `.fsx` import warns and then fails to parse. Either drop `.fsx` from the regex or handle it.
-- **`console.log(msg)` at `index.js:487`** is leftover debugging.
 
 ## 4. The JSX handoff to plugin-react works by accident
 
@@ -196,4 +195,4 @@ The one argument that survives is dogfooding — a real Vite plugin written in F
 - `ideas.md`: filter diagnostics from `fable_modules` (plugin option) and expose a version property on Fable.Compiler (`Caching.fableCompilerVersion` reads it via reflection today).
 - `mailbox.Error.Subscribe (fun _ -> ())` in `Program.fs` swallows mailbox failures silently.
 - `Fable.Daemon.Tests/DebugTests.fs` references `../../telplin` and `../../fantomas-tools` checkouts; only the sample-project case is portable.
-- There are no tests on the JavaScript side at all. A couple of integration tests driving `createServer` against `sample-project` would de-risk item 1.
+- The JavaScript tests cover the hooks against a stub daemon (`tests/index.test.ts`). Still missing: integration tests driving `createServer` against `sample-project` with the real daemon, and a contract test asserting the daemon's responses still match what `src/daemon.ts` decodes — that second one is the cheap half of item 8.

@@ -10,7 +10,7 @@
     "declaration": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "."
+    "rootDir": "./src"
   },
-  "include": ["./index.ts", "./types.ts"]
+  "include": ["./src"]
 }

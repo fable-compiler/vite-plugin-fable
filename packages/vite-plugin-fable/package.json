@@ -25,8 +25,9 @@
   "scripts": {
     "build": "tsc",
     "build:daemon": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./bin",
+    "test": "bun test",
     "postinstall": "bun run build:daemon",
-    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.docs.json",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.docs.json",
     "prepublishOnly": "cp ../../Directory.Build.props ../../Directory.Packages.props . && bun run build && bun ../../scripts/changelog-updater.js"
   },
   "dependencies": {
@@ -38,6 +39,7 @@
     "ts-lsp-client": "1.1.1"
   },
   "devDependencies": {
+    "@types/bun": "^1.4.0",
     "@types/node": "^26.4.0",
     "keep-a-changelog": "^3.1.0",
     "typescript": "7.0.2",

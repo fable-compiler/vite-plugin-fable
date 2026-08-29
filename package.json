@@ -21,7 +21,9 @@
     "fmt": "oxfmt && dotnet fantomas .",
     "fmt:check": "oxfmt --check && dotnet fantomas check .",
     "lint": "bun run --cwd packages/vite-plugin-fable lint",
-    "test": "dotnet test",
+    "test": "bun run test:plugin && bun run test:daemon",
+    "test:plugin": "bun run --cwd packages/vite-plugin-fable test",
+    "test:daemon": "dotnet test",
     "sample": "bun run --cwd sample-project dev"
   },
   "devDependencies": {
