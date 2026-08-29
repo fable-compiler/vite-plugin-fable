@@ -49,6 +49,12 @@ interface HotModule {
   importers: Set<unknown>;
 }
 
+/** The slice of `ViteDevServer` the `configureServer` hook reaches for. */
+interface ServerStub {
+  config: { root: string };
+  watcher: { add(id: string): void };
+}
+
 /** Records what the plugin pushes to the browser, and what the module graph holds. */
 interface EnvironmentStub {
   hot: { send(payload?: unknown): unknown };
@@ -62,8 +68,16 @@ interface Harness {
   plugin: Plugin;
   daemon: StubDaemon;
   watched: string[];
-  /** Runs `configResolved` then `buildStart`, as Vite would. */
+  /**
+   * Runs the startup hooks as Vite would, and waits for the first compile. In dev that wait is the
+   * test's, not the server's — see {@link Harness.boot}.
+   */
   start(config?: ResolvedConfig): Promise<void>;
+  /**
+   * Runs the startup hooks and returns as soon as they do, without waiting for the first compile.
+   * This is what Vite does before `httpServer.listen`.
+   */
+  boot(config?: ResolvedConfig): Promise<void>;
   /** Calls the `transform` hook the way Vite's plugin container does. */
   transform(id: string): Promise<TransformOutput>;
   /** Whether rolldown would call the `transform` handler for this id at all. */
@@ -90,6 +104,17 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
     },
     error: (message: string): never => {
       throw new Error(message);
+    },
+  };
+
+  // In dev the plugin watches through the server's watcher rather than `this.addWatchFile`, so
+  // both land in `watched` and a test does not have to know which hook ran.
+  const server: ServerStub = {
+    config: { root: sampleProject },
+    watcher: {
+      add: (id: string): void => {
+        watched.push(id);
+      },
     },
   };
 
@@ -134,9 +159,19 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
         },
       );
     },
-    async start(config = resolvedConfig()) {
+    async boot(config = resolvedConfig()) {
       await (plugin.configResolved as any).call(context, config);
+      // Vite calls `configureServer` (server/index.ts:1008) before `buildStart` (:1104), and only
+      // for a dev server.
+      if (config.command !== "build") {
+        (plugin.configureServer as any).call(context, server);
+      }
       await (plugin.buildStart as any).call(context, {});
+    },
+    async start(config = resolvedConfig()) {
+      await this.boot(config);
+      // A build has already compiled by the time `buildStart` returns; a dev server has not.
+      if (config.command !== "build") await afterCoalescing();
     },
     async transform(id: string): Promise<TransformOutput> {
       return (plugin.transform as any).handler.call(context, "", id);
@@ -175,13 +210,13 @@ function afterCoalescing(): Promise<void> {
 describe("configResolved", () => {
   test("uses the fsproj given in the plugin options", async () => {
     const h: Harness = harness();
-    await (h.plugin.configResolved as any).call({}, resolvedConfig());
-    await (h.plugin.buildStart as any).call({ addWatchFile: () => {} }, {});
+    await h.start();
     expect(h.daemon.projectChangedCalls[0].project).toBe(appFsproj);
   });
 
   test("finds the fsproj in the Vite root when no option is given", async () => {
     const daemon: StubDaemon = createStubDaemon({});
+    // Deliberately not the harness: it always passes an explicit `fsproj`.
     const plugin: Plugin = createFablePlugin({}, (): StubDaemon => daemon);
     const context: PluginContextStub = {
       addWatchFile: (): void => {},
@@ -190,7 +225,12 @@ describe("configResolved", () => {
       },
     };
     await (plugin.configResolved as any).call(context, resolvedConfig());
+    (plugin.configureServer as any).call(context, {
+      config: { root: sampleProject },
+      watcher: { add: (): void => {} },
+    });
     await (plugin.buildStart as any).call(context, {});
+    await afterCoalescing();
     expect(daemon.projectChangedCalls[0].project).toBe(appFsproj);
   });
 
@@ -259,11 +299,55 @@ describe("buildStart", () => {
     expect(h.daemon.initialCompileCalls).toBe(1);
   });
 
-  test("watches source files and MSBuild dependencies", async () => {
+  test("watches source files and MSBuild dependencies during a build", async () => {
     const h: Harness = harness({}, { sourceFiles: [mathFs], dependentFiles: [appFsproj] });
-    await h.start();
+    await h.start(buildConfig());
     expect(h.watched).toContain(mathFs);
     expect(h.watched).toContain(appFsproj);
+  });
+
+  test("watches MSBuild dependencies outside the Vite root in dev", async () => {
+    // A `Directory.Build.props` above the Vite root still decides what Fable compiles, and the dev
+    // watcher does not cover it. Files under the root are already watched, so adding them again
+    // would be work for nothing — this is the same rule Vite's own `ensureWatchedFile` applies.
+    const outsideRoot = `${path.dirname(sampleProject)}/Directory.Build.props`;
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], dependentFiles: [appFsproj, outsideRoot] },
+    );
+    await h.start();
+    expect(h.watched).toContain(outsideRoot);
+    expect(h.watched).not.toContain(mathFs);
+  });
+
+  test("does not hold the dev server back while the first compile runs", async () => {
+    // Vite awaits `buildStart` before `httpServer.listen`, so a slow crack there means no URL and
+    // no overlay. The wait belongs in `transform`, which is per request.
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "export const x = 1;" } },
+    );
+    const finishCrack: () => void = h.daemon.blockNextProjectChange();
+
+    // Reaching the next line at all is the point: nothing has released the gate, so a `buildStart`
+    // that waited for the crack would never return.
+    await h.boot();
+    await afterCoalescing();
+
+    // The startup hooks are done while the daemon is still cracking.
+    expect(h.daemon.projectChangedCalls).toHaveLength(1);
+    expect(h.daemon.initialCompileCalls).toBe(0);
+
+    let served = false;
+    const request: Promise<TransformOutput> = h.transform(mathFs).then((r: TransformOutput) => {
+      served = true;
+      return r;
+    });
+    await afterCoalescing();
+    expect(served).toBe(false);
+
+    finishCrack();
+    expect((await request)?.code).toBe("export const x = 1;");
   });
 
   test("fails the build when the daemon is unavailable", async () => {
