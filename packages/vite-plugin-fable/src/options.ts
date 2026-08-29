@@ -1,6 +1,17 @@
 import type { FableConfiguration, PluginOptions, ResolvedPluginOptions } from "./types.js";
 
-const defaults: ResolvedPluginOptions = { jsx: null, noReflection: false, exclude: [] };
+const defaults: ResolvedPluginOptions = {
+  jsx: null,
+  noReflection: false,
+  exclude: [],
+  // The env var is the switch you can flip without editing a config, and it also turns on
+  // the daemon's own log viewer.
+  debug: isTruthy(process.env.VITE_PLUGIN_FABLE_DEBUG),
+};
+
+function isTruthy(value: string | undefined): boolean {
+  return !!value && value !== "0" && value !== "false";
+}
 
 const jsxValues: ReadonlyArray<string> = ["automatic", "transform"];
 const configurationValues: ReadonlyArray<string> = ["Debug", "Release"];
@@ -12,6 +23,7 @@ const knownKeys: ReadonlyArray<keyof PluginOptions> = [
   "noReflection",
   "exclude",
   "configuration",
+  "debug",
 ];
 
 function fail(message: string): never {
@@ -66,7 +78,7 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
     }
   }
 
-  const { fsproj, jsx, noReflection, exclude, configuration } = userConfig;
+  const { fsproj, jsx, noReflection, exclude, configuration, debug } = userConfig;
 
   if (fsproj !== undefined && typeof fsproj !== "string") {
     fail(`"fsproj" must be a path, got ${typeof fsproj}.`);
@@ -86,6 +98,9 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
   if (noReflection !== undefined && typeof noReflection !== "boolean") {
     fail(`"noReflection" must be a boolean, got ${typeof noReflection}.`);
   }
+  if (debug !== undefined && typeof debug !== "boolean") {
+    fail(`"debug" must be a boolean, got ${typeof debug}.`);
+  }
   if (
     exclude !== undefined &&
     (!Array.isArray(exclude) || exclude.some((e: unknown): boolean => typeof e !== "string"))
@@ -103,6 +118,7 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
     ...(fsproj === undefined ? {} : { fsproj }),
     ...(jsx === undefined ? {} : { jsx }),
     ...(noReflection === undefined ? {} : { noReflection }),
+    ...(debug === undefined ? {} : { debug }),
     ...(exclude === undefined ? {} : { exclude }),
     ...(configuration === undefined ? {} : { configuration: configuration as FableConfiguration }),
   };

@@ -381,6 +381,73 @@ describe("buildStart", () => {
   });
 });
 
+describe("logging", () => {
+  /** Captures everything the plugin sends to the Vite logger, colours stripped. */
+  function recordingConfig(
+    lines: string[],
+    overrides: Partial<ResolvedConfig> = {},
+  ): ResolvedConfig {
+    const record: (message: string) => void = (message: string): void => {
+      // eslint-disable-next-line no-control-regex
+      lines.push(message.replace(/\u001b\[[0-9;]*m/g, ""));
+    };
+    return resolvedConfig({
+      logger: { ...silentLogger, info: record, warn: record, error: record },
+      ...overrides,
+    } as unknown as Partial<ResolvedConfig>);
+  }
+
+  async function linesFrom(
+    pluginOptions: PluginOptions,
+    stub: StubDaemonOptions,
+  ): Promise<string[]> {
+    const lines: string[] = [];
+    const h: Harness = harness(pluginOptions, stub);
+    await h.start(recordingConfig(lines));
+    return lines;
+  }
+
+  const project: StubDaemonOptions = {
+    sourceFiles: [mathFs],
+    compiled: { [mathFs]: "export const x = 1;" },
+  };
+
+  test("prints one line for a compile and nothing else", async () => {
+    const lines: string[] = await linesFrom({}, project);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\[fable\] compiled App\.fsproj in \d+\.\d\ds$/);
+  });
+
+  test("logs paths relative to the Vite root", async () => {
+    const lines: string[] = await linesFrom({}, project);
+    // Vite prints paths relative to the root; an absolute path is noise the user has to read past.
+    expect(lines.join("\n")).not.toContain(sampleProject);
+  });
+
+  test("prints the detail again when debug is on", async () => {
+    const lines: string[] = await linesFrom({ debug: true }, project);
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.join("\n")).toContain("entry project App.fsproj");
+    expect(lines.join("\n")).toContain("daemon: starting");
+  });
+
+  test("reports diagnostics whether or not debug is on", async () => {
+    const lines: string[] = await linesFrom(
+      {},
+      { ...project, projectDiagnostics: [errorAt(mathFs)] },
+    );
+    expect(lines.join("\n")).toContain("This expression was expected to have type int");
+  });
+
+  test("reports a failed compile", async () => {
+    const lines: string[] = [];
+    const h: Harness = harness();
+    h.daemon.failWith(new Error("daemon exploded"));
+    await h.start(recordingConfig(lines));
+    expect(lines.join("\n")).toContain("daemon exploded");
+  });
+});
+
 describe("fast refresh", () => {
   /** A resolved config carrying the `oxc` options `@vitejs/plugin-react` would have set. */
   function configWithOxc(oxc: unknown, warnings: string[]): ResolvedConfig {

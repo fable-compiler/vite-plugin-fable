@@ -12,13 +12,14 @@ There are a few things you can configure in the plugin configuration.
 
 Every option the plugin accepts. All of them are optional.
 
-| Option          | Type                                                    | Default                            | What it does                                                                    |
-| --------------- | ------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
-| `fsproj`        | `string`                                                | the single `.fsproj` in the root   | The entry project. See [Alternative fsproj](#Alternative-fsproj).               |
-| `configuration` | <code>"Debug" &#124; "Release"</code>                   | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#Debug-or-Release).               |
-| `jsx`           | <code>"automatic" &#124; "transform" &#124; null</code> | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#Fable-Core-JSX).        |
-| `noReflection`  | `boolean`                                               | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output. |
-| `exclude`       | `string[]`                                              | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins. |
+| Option          | Type                                                    | Default                            | What it does                                                                                             |
+| --------------- | ------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `fsproj`        | `string`                                                | the single `.fsproj` in the root   | The entry project. See [Alternative fsproj](#Alternative-fsproj).                                        |
+| `configuration` | <code>"Debug" &#124; "Release"</code>                   | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#Debug-or-Release).                                        |
+| `jsx`           | <code>"automatic" &#124; "transform" &#124; null</code> | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#Fable-Core-JSX).                                 |
+| `noReflection`  | `boolean`                                               | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output.                          |
+| `exclude`       | `string[]`                                              | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins.                          |
+| `debug`         | `boolean`                                               | `false`                            | Print what the plugin is doing. See [Seeing what the plugin is doing](#Seeing-what-the-plugin-is-doing). |
 
 `noReflection` and `exclude` are handed to Fable.Compiler unchanged; they mean what they mean for
 the `dotnet fable` CLI. Changing either invalidates the plugin's build caches, so you do not need
@@ -38,6 +39,33 @@ exports `PluginOptions` and `FableConfiguration` for when you want to name them:
 ```ts
 import type { FableConfiguration, PluginOptions } from "vite-plugin-fable";
 ```
+
+## Seeing what the plugin is doing
+
+By default the plugin prints one line per compile, plus any diagnostics and errors:
+
+```text
+  VITE v8.2.2  ready in 376 ms
+
+  ➜  Local:   http://localhost:4000/
+  3:42:12 PM [vite] [fable] compiled App.fsproj in 1.53s
+```
+
+When that is not enough, turn on `debug`:
+
+```js
+export default defineConfig({
+  plugins: [fable({ debug: true })],
+});
+```
+
+That adds every hook the plugin runs, every file it transforms, where it resolved `fable-library`,
+the cracking and type-checking timings, and whatever the daemon writes to stderr. Paths stay
+relative to the Vite root, so they are readable at a glance.
+
+`VITE_PLUGIN_FABLE_DEBUG=1` does the same without touching the config, and additionally starts the
+daemon's own log viewer on <http://localhost:9014>. That is the one thing the `debug` option cannot
+do, because the viewer runs inside the compiler process rather than the plugin.
 
 ## Alternative fsproj
 
