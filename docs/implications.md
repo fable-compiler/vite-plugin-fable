@@ -18,7 +18,7 @@ All these pieces of technologies need to be in tune before any of this can work.
 
 The combination of a thin JavaScript wrapped that communicates with a dotnet process via JSON-RPC.
 
-### index.js
+### The plugin
 
 This Vite plugin harnesses the power of both [Vite specific hooks](https://vitejs.dev/guide/api-plugin.html#rollup-plugin-compatibility) and [Rollup hooks](https://rollupjs.org/plugin-development/).  
 While both offer documentation, occasionally you might find it doesn't cover every scenario.
@@ -39,7 +39,10 @@ To streamline this process, you can set `<UseLocalFableCompiler>true</UseLocalFa
 
 ### Trivia
 
-- Transpiled F# files are not written to disk but are kept in memory.
+- The plugin is TypeScript, type-checked against Vite's own `.d.ts`, and ships as `dist/`.
+- Transpiled F# files for your own sources are kept in memory rather than written next to
+  them. Compiled `fable_modules` output is the exception: it is cached under `obj/` so
+  dependencies survive a restart.
 - The transpiled JavaScript maintains references to the original F# files for imports, e.g., `import { Foo } from "./Bar.fs"`. This approach informs the Vite plugin that it's working with virtual files.
 - Presently, only F# is supported, mainly due to the lack of a pressing need to incorporate other languages.
 

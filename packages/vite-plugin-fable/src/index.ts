@@ -374,6 +374,28 @@ export function createFablePlugin(
     return batch.settled.promise;
   }
 
+  /**
+   * The compile for one file change, shared by every environment Vite reports it to.
+   *
+   * `handleHMRUpdate` takes a single timestamp per change (`server/hmr.ts:472`) and then hands it
+   * to `hotUpdate` once per environment (`:667-676`). Those calls arrive one after another, not
+   * together, so the coalescing window has already flushed by the time the second one lands: a dev
+   * server with the default `client` and `ssr` environments compiled every edit twice. Keying on
+   * the timestamp Vite already computed makes one filesystem change mean one compile, while each
+   * environment still resolves the resulting files against its own module graph.
+   */
+  let sharedSourceChange: { key: string; result: Promise<BatchResult> } | null = null;
+
+  function queueSourceChangeOnce(file: string, timestamp: number): Promise<BatchResult> {
+    const key = `${file}\u0000${timestamp}`;
+    if (sharedSourceChange?.key === key) return sharedSourceChange.result;
+    // One entry is enough: Vite finishes fanning a change out to every environment before the
+    // next change gets a timestamp.
+    const result: Promise<BatchResult> = queueSourceChange(file);
+    sharedSourceChange = { key, result };
+    return result;
+  }
+
   /** Queues a full re-crack and resolves with the batch it lands in. */
   function queueProjectChange(file: string): Promise<BatchResult> {
     const batch: Batch = openBatch();
@@ -624,7 +646,12 @@ export function createFablePlugin(
         await queueProjectChange(normalizePath(id));
       }
     },
-    hotUpdate: async function ({ type, file, modules }): Promise<EnvironmentModuleNode[] | void> {
+    hotUpdate: async function ({
+      type,
+      file,
+      modules,
+      timestamp,
+    }): Promise<EnvironmentModuleNode[] | void> {
       const environment: DevEnvironment = this.environment;
       // An edit can land before the first crack has named the project's files. Deciding without
       // that list would drop the change as "not ours".
@@ -655,7 +682,7 @@ export function createFablePlugin(
       if (!sourceFile) return;
 
       logDebug("hotUpdate", `enter for ${short(sourceFile)}`);
-      const result: BatchResult = await queueSourceChange(sourceFile);
+      const result: BatchResult = await queueSourceChangeOnce(sourceFile, timestamp);
       logDebug("hotUpdate", `leave for ${short(sourceFile)}`);
 
       const errorDiagnostic: Diagnostic | undefined = result.diagnostics.find(
