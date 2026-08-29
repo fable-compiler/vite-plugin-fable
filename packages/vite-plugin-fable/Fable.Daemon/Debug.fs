@@ -28,7 +28,10 @@ let zeroSuaveLogger : Logger =
         member x.name = [| "vite-plugin-fable" |]
     }
 
-let homeFolder = Path.Combine (__SOURCE_DIRECTORY__, "debug")
+/// Next to the assembly rather than `__SOURCE_DIRECTORY__`, which bakes in the path the daemon was
+/// compiled in. That was the same folder while the daemon was built on the machine that ran it, and
+/// is a stranger's home directory now that it ships prebuilt.
+let homeFolder = Path.Combine (AppContext.BaseDirectory, "debug")
 
 type LogEntry =
     {

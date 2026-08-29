@@ -11,8 +11,10 @@
     <Compile Include="MSBuild.fs" />
     <Compile Include="Caching.fs" />
     <Compile Include="ProjectCracking.fs" />
-    <Content Include="debug\index.html" />
-    <Content Include="debug\favicon.ico" />
+    <!-- Copied next to the assembly, because the daemon now ships prebuilt: it is no longer
+         compiled in the folder it is served from. -->
+    <Content Include="debug\index.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="debug\favicon.ico" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="Debug.fsi" />
     <Compile Include="Debug.fs" />
     <Compile Include="Program.fs" />
