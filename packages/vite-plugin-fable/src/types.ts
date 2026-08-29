@@ -64,6 +64,17 @@ export interface PluginOptions {
    */
   debug?: boolean;
   /**
+   * Report diagnostics for files under `fable_modules`.
+   *
+   * Off by default: those files are the sources Fable restored for the packages the project
+   * depends on, so a diagnostic there is about code nobody in this project wrote or can edit.
+   *
+   * Turning it on is a debugging aid, for when a package itself is what looks broken. Note that
+   * with it off, an *error* in a package's sources is dropped too, so `vite build` reports nothing
+   * and exits 0 even though Fable did not emit working JavaScript for that file.
+   */
+  fableModulesDiagnostics?: boolean;
+  /**
    * The MSBuild configuration to compile with.
    *
    * Defaults to `Release` for `vite build` and `Debug` for `vite dev`, whatever `--mode` says:

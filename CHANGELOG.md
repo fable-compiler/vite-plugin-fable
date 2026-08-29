@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vite 8 is the peer dependency. The JSX transform after Fable compilation uses Vite's `transformWithOxc` (rolldown/oxc); `esbuild` is no longer a peer dependency.
 - All JavaScript dependencies updated (`@babel/code-frame` 8, `ts-lsp-client` 1.1.1, TypeScript 7, React 19 and `@vitejs/plugin-react` 6 in the sample).
 - The repository is a Bun workspace with isolated installs: the plugin lives in `packages/vite-plugin-fable` and `sample-project` depends on it via `workspace:*`. `Directory.*.props` stay at the repo root and are copied into the package by `prepublishOnly`; the changelog updater lives in `scripts/`. Shared versions (`vite`, `vite-plugin-inspect`, `@fable-org/fable-library-js`) are declared once in the root workspace catalog and referenced as `catalog:`.
+- Diagnostics for files under `fable_modules` are no longer reported. They are about the sources Fable restored for the packages a project depends on, which nobody using the plugin wrote or can edit. The new `fableModulesDiagnostics` option reports them again, including errors, which is worth turning on when a package itself is what looks broken.
 - `fable-library` is located with `import.meta.resolve` instead of guessing `node_modules` paths.
 - Prettier replaced by oxfmt (`bun run format`, `bun run format:check`).
 

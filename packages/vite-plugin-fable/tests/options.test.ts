@@ -5,7 +5,13 @@ import type { PluginOptions, ResolvedPluginOptions } from "../src/types.js";
 describe("resolveOptions", () => {
   test("fills in the defaults when nothing is given", () => {
     const resolved: ResolvedPluginOptions = resolveOptions(undefined);
-    expect(resolved).toEqual({ jsx: null, noReflection: false, exclude: [], debug: false });
+    expect(resolved).toEqual({
+      jsx: null,
+      noReflection: false,
+      exclude: [],
+      debug: false,
+      fableModulesDiagnostics: false,
+    });
   });
 
   test("keeps what the user set", () => {
@@ -30,7 +36,7 @@ describe("resolveOptions", () => {
 
   test("lists the known options for an unrecognisable key", () => {
     expect(() => resolveOptions({ wat: 1 } as unknown as PluginOptions)).toThrow(
-      /Known options: fsproj, jsx, noReflection, exclude, configuration, debug/,
+      /Known options: fsproj, jsx, noReflection, exclude, configuration, debug, fableModulesDiagnostics/,
     );
   });
 
@@ -61,6 +67,12 @@ describe("resolveOptions", () => {
     expect(() => resolveOptions({ exclude: [1] } as unknown as PluginOptions)).toThrow(
       /"exclude" must be an array of strings/,
     );
+  });
+
+  test("rejects a non-boolean fableModulesDiagnostics", () => {
+    expect(() =>
+      resolveOptions({ fableModulesDiagnostics: "yes" } as unknown as PluginOptions),
+    ).toThrow(/"fableModulesDiagnostics" must be a boolean, got string/);
   });
 
   test("rejects a non-object", () => {

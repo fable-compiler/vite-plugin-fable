@@ -215,6 +215,25 @@ function errorAt(file: string): Diagnostic {
   };
 }
 
+/** Captures everything the plugin sends to the Vite logger, colours stripped. */
+function recordingConfig(lines: string[], overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+  const record: (message: string) => void = (message: string): void => {
+    // eslint-disable-next-line no-control-regex
+    lines.push(message.replace(/\u001b\[[0-9;]*m/g, ""));
+  };
+  return resolvedConfig({
+    logger: { ...silentLogger, info: record, warn: record, error: record },
+    ...overrides,
+  } as unknown as Partial<ResolvedConfig>);
+}
+
+async function linesFrom(pluginOptions: PluginOptions, stub: StubDaemonOptions): Promise<string[]> {
+  const lines: string[] = [];
+  const h: Harness = harness(pluginOptions, stub);
+  await h.start(recordingConfig(lines));
+  return lines;
+}
+
 /** Waits past the plugin's 50ms coalescing window. */
 function afterCoalescing(): Promise<void> {
   return new Promise((resolve: () => void) => setTimeout(resolve, 120));
@@ -488,32 +507,67 @@ describe("hotUpdate across environments", () => {
   });
 });
 
-describe("logging", () => {
-  /** Captures everything the plugin sends to the Vite logger, colours stripped. */
-  function recordingConfig(
-    lines: string[],
-    overrides: Partial<ResolvedConfig> = {},
-  ): ResolvedConfig {
-    const record: (message: string) => void = (message: string): void => {
-      // eslint-disable-next-line no-control-regex
-      lines.push(message.replace(/\u001b\[[0-9;]*m/g, ""));
-    };
-    return resolvedConfig({
-      logger: { ...silentLogger, info: record, warn: record, error: record },
-      ...overrides,
-    } as unknown as Partial<ResolvedConfig>);
-  }
+describe("fable_modules diagnostics", () => {
+  const packageFs = `${sampleProject}/fable_modules/Thoth.Json.10.2.0/Decode.fs`;
+  const project: StubDaemonOptions = {
+    sourceFiles: [mathFs],
+    compiled: { [mathFs]: "export const x = 1;" },
+  };
 
-  async function linesFrom(
-    pluginOptions: PluginOptions,
-    stub: StubDaemonOptions,
-  ): Promise<string[]> {
+  test("says nothing about a warning in a restored package", async () => {
+    // Nobody using the plugin wrote Decode.fs or can edit it, so its warnings are noise.
+    const warning: Diagnostic = { ...errorAt(packageFs), severity: "Warning" };
+    const lines: string[] = await linesFrom({}, { ...project, projectDiagnostics: [warning] });
+    expect(lines.join("\n")).not.toContain("This expression was expected to have type int");
+  });
+
+  test("reports it once the option asks for it", async () => {
+    const warning: Diagnostic = { ...errorAt(packageFs), severity: "Warning" };
+    const lines: string[] = await linesFrom(
+      { fableModulesDiagnostics: true },
+      { ...project, projectDiagnostics: [warning] },
+    );
+    expect(lines.join("\n")).toContain("This expression was expected to have type int");
+  });
+
+  test("keeps reporting diagnostics on the project's own files", async () => {
+    const lines: string[] = await linesFrom(
+      {},
+      { ...project, projectDiagnostics: [errorAt(mathFs)] },
+    );
+    expect(lines.join("\n")).toContain("This expression was expected to have type int");
+  });
+
+  test("drops the diagnostics a compile produced too, not only the crack's", async () => {
+    const warning: Diagnostic = { ...errorAt(packageFs), severity: "Warning" };
     const lines: string[] = [];
-    const h: Harness = harness(pluginOptions, stub);
+    const h: Harness = harness({}, project);
     await h.start(recordingConfig(lines));
-    return lines;
-  }
+    h.daemon.setCompileResult({ [mathFs]: "export const x = 2;" }, [warning]);
+    await h.hotUpdate(mathFs);
 
+    expect(lines.join("\n")).not.toContain("This expression was expected to have type int");
+  });
+
+  test("an error in a restored package no longer fails the build", async () => {
+    // The option owns errors as well as warnings, so with it off `vite build` exits 0 even though
+    // Fable emitted nothing usable for that file. Turning it on is what surfaces the error again.
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], projectDiagnostics: [errorAt(packageFs)] },
+    );
+    await h.start(buildConfig());
+    expect(h.daemon.initialCompileCalls).toBe(1);
+
+    const loud: Harness = harness(
+      { fableModulesDiagnostics: true },
+      { sourceFiles: [mathFs], projectDiagnostics: [errorAt(packageFs)] },
+    );
+    expect(loud.start(buildConfig())).rejects.toThrow(/FS0001/);
+  });
+});
+
+describe("logging", () => {
   const project: StubDaemonOptions = {
     sourceFiles: [mathFs],
     compiled: { [mathFs]: "export const x = 1;" },

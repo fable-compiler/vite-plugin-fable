@@ -12,14 +12,15 @@ There are a few things you can configure in the plugin configuration.
 
 Every option the plugin accepts. All of them are optional.
 
-| Option          | Type                                                    | Default                            | What it does                                                                                             |
-| --------------- | ------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `fsproj`        | `string`                                                | the single `.fsproj` in the root   | The entry project. See [Alternative fsproj](#Alternative-fsproj).                                        |
-| `configuration` | <code>"Debug" &#124; "Release"</code>                   | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#Debug-or-Release).                                        |
-| `jsx`           | <code>"automatic" &#124; "transform" &#124; null</code> | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#Fable-Core-JSX).                                 |
-| `noReflection`  | `boolean`                                               | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output.                          |
-| `exclude`       | `string[]`                                              | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins.                          |
-| `debug`         | `boolean`                                               | `false`                            | Print what the plugin is doing. See [Seeing what the plugin is doing](#Seeing-what-the-plugin-is-doing). |
+| Option                    | Type                                                    | Default                            | What it does                                                                                                                       |
+| ------------------------- | ------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `fsproj`                  | `string`                                                | the single `.fsproj` in the root   | The entry project. See [Alternative fsproj](#Alternative-fsproj).                                                                  |
+| `configuration`           | <code>"Debug" &#124; "Release"</code>                   | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#Debug-or-Release).                                                                  |
+| `jsx`                     | <code>"automatic" &#124; "transform" &#124; null</code> | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#Fable-Core-JSX).                                                           |
+| `noReflection`            | `boolean`                                               | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output.                                                    |
+| `exclude`                 | `string[]`                                              | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins.                                                    |
+| `debug`                   | `boolean`                                               | `false`                            | Print what the plugin is doing. See [Seeing what the plugin is doing](#Seeing-what-the-plugin-is-doing).                           |
+| `fableModulesDiagnostics` | `boolean`                                               | `false`                            | Report diagnostics for files under `fable_modules`. See [Diagnostics from restored packages](#Diagnostics-from-restored-packages). |
 
 `noReflection` and `exclude` are handed to Fable.Compiler unchanged; they mean what they mean for
 the `dotnet fable` CLI. Changing either invalidates the plugin's build caches, so you do not need
@@ -30,7 +31,7 @@ a message rather than being quietly ignored:
 
 ```
 vite-plugin-fable: unknown option "noRefleciton". Did you mean "noReflection"?
-Known options: fsproj, jsx, noReflection, exclude, configuration.
+Known options: fsproj, jsx, noReflection, exclude, configuration, debug, fableModulesDiagnostics.
 ```
 
 If you write your Vite config in TypeScript you get the same feedback in the editor. The plugin
@@ -39,6 +40,24 @@ exports `PluginOptions` and `FableConfiguration` for when you want to name them:
 ```ts
 import type { FableConfiguration, PluginOptions } from "vite-plugin-fable";
 ```
+
+## Diagnostics from restored packages
+
+Fable restores the sources of the packages your project depends on into `fable_modules` and
+compiles them along with your own files, so their warnings arrive with yours. They are about code
+you did not write and cannot edit, so the plugin drops them.
+
+`fableModulesDiagnostics: true` reports them again. It is a debugging aid, for when a package
+itself is what looks broken:
+
+```js
+fable({ fableModulesDiagnostics: true });
+```
+
+The option covers errors as well as warnings. With it off, a package whose sources fail to compile
+takes the only signal with it: nothing is printed and `vite build` exits 0, even though Fable
+emitted nothing usable for that file. If a build succeeds and the app is broken in a way that
+points at a package, turn this on first.
 
 ## Seeing what the plugin is doing
 
