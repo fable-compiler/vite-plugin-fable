@@ -33,16 +33,9 @@ let dotnet_msbuild_with_defines
         ps.Start () |> ignore
         let output = ps.StandardOutput.ReadToEnd ()
         let error = ps.StandardError.ReadToEnd ()
-        let ranToCompletion = ps.WaitForExit (TimeSpan.FromSeconds 5.)
+        do! ps.WaitForExitAsync ()
 
-        if not ranToCompletion then
-            logger.LogCritical (
-                "dotnet msbuild \"{fsproj}\" {args}\n did not run until completion in time.",
-                fsproj.FullName,
-                args
-            )
-
-        if not (String.IsNullOrWhiteSpace error) then
+        if ps.ExitCode <> 0 || not (String.IsNullOrWhiteSpace error) then
             logger.LogCritical ("dotnet msbuild \"{fsproj}\" {args}\n did has {error}", fsproj.FullName, args, error)
             failwithf $"In %s{pwd}:\ndotnet msbuild \"%s{fsproj.FullName}\" %s{args} failed with\n%s{error}"
 

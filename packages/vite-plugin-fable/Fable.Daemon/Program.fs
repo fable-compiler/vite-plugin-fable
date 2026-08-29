@@ -34,7 +34,7 @@ type CrackerInput =
 
 type Model =
     {
-        CoolCatResolver : CoolCatResolver
+        Resolver : CachedMSBuildCrackerResolver
         Checker : InteractiveChecker
         CrackerInput : CrackerInput option
         CrackerResponse : CrackerResponse
@@ -94,8 +94,10 @@ let tryTypeCheckProject
                         PrintAst = false
                         FableLibraryPath = Some payload.FableLibrary
                         Configuration = payload.Configuration
-                        NoRestore = true
+                        // Fable's MSBuildCrackerResolver only adds `/restore` to the design time build when this is false.
+                        NoRestore = false
                         NoCache = true
+                        NoGitignore = true
                         NoParallelTypeCheck = false
                         SourceMaps = false
                         SourceMapsRoot = None
@@ -121,7 +123,8 @@ let tryTypeCheckProject
 
                 cliArgs, CrackerOptions (cliArgs, true)
 
-            let crackerResponse = getFullProjectOpts model.CoolCatResolver crackerOptions
+            let crackerResponse = getFullProjectOpts model.Resolver crackerOptions
+
             logger.LogDebug ("CrackerResponse: {crackerResponse}", crackerResponse)
             let checker = InteractiveChecker.Create crackerResponse.ProjectOptions
 
@@ -137,7 +140,7 @@ let tryTypeCheckProject
             logger.LogDebug ("Typechecking {projectFile} took {elapsed}", projectFile, typeCheckTime)
 
             let dependentFiles =
-                model.CoolCatResolver.MSBuildProjectFiles projectFile
+                model.Resolver.MSBuildProjectFiles projectFile
                 |> List.map (fun fi -> fi.FullName)
                 |> List.toArray
 
@@ -191,7 +194,7 @@ let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<Compiled
     async {
         try
             let cachedFableModuleFiles =
-                model.CoolCatResolver.TryGetCachedFableModuleFiles model.CrackerResponse.ProjectOptions.ProjectFileName
+                model.Resolver.TryGetCachedFableModuleFiles model.CrackerResponse.ProjectOptions.ProjectFileName
 
             let files =
                 let cachedFiles = cachedFableModuleFiles.Keys |> Set.ofSeq
@@ -221,7 +224,7 @@ let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<Compiled
                     initialCompileResponse.CompiledFiles
                     |> Map.filter (fun key _value -> key.Contains "fable_modules")
 
-                model.CoolCatResolver.WriteCachedFableModuleFiles
+                model.Resolver.WriteCachedFableModuleFiles
                     model.CrackerResponse.ProjectOptions.ProjectFileName
                     fableModuleFiles
 
@@ -264,7 +267,9 @@ let rec getDependentFiles
             return! getDependentFiles sourceReader projectOptions checker tail result
         else
 
-        let! nextFiles = checker.GetDependentFiles (head, projectOptions.SourceFiles, sourceReader)
+        let! nextFiles =
+            checker.GetDependentFiles (head, projectOptions.SourceFiles, sourceReader)
+
         let nextResult = (result, nextFiles) ||> Array.fold (fun acc f -> Set.add f acc)
 
         return! getDependentFiles sourceReader projectOptions checker tail nextResult
@@ -352,7 +357,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                 JsonSerializerOptions (PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
 
             let jsonFSharpOptions =
-                JsonFSharpOptions.Default().WithUnionTagName("case").WithUnionFieldsName ("fields")
+                JsonFSharpOptions.Default().WithUnionTagName("case").WithUnionFieldsName("fields")
 
             options.Converters.Add (JsonUnionConverter jsonFSharpOptions)
             options
@@ -434,7 +439,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
 
             loop
                 {
-                    CoolCatResolver = CoolCatResolver logger
+                    Resolver = CachedMSBuildCrackerResolver logger
                     Checker = Unchecked.defaultof<InteractiveChecker>
                     CrackerResponse = Unchecked.defaultof<CrackerResponse>
                     SourceReader = Unchecked.defaultof<SourceReader>
@@ -468,7 +473,10 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     member _.ProjectChanged (p : ProjectChangedPayload) : Task<ProjectChangedResult> =
         task {
             logger.LogDebug ("enter \"fable/project-changed\" {p}", p)
-            let! response = mailbox.PostAndAsyncReply (fun replyChannel -> Msg.ProjectChanged (p, replyChannel))
+
+            let! response =
+                mailbox.PostAndAsyncReply (fun replyChannel -> Msg.ProjectChanged (p, replyChannel))
+
             logger.LogDebug ("exit \"fable/project-changed\" {response}", response)
             return response
         }
@@ -526,6 +534,6 @@ Log.setLogger Verbosity.Verbose logger
 let daemon =
     new FableServer (Console.OpenStandardOutput (), Console.OpenStandardInput (), logger)
 
-AppDomain.CurrentDomain.ProcessExit.Add (fun _ -> (daemon :> IDisposable).Dispose ())
-daemon.WaitForClose.GetAwaiter().GetResult ()
+AppDomain.CurrentDomain.ProcessExit.Add (fun _ -> (daemon :> IDisposable).Dispose())
+daemon.WaitForClose.GetAwaiter().GetResult()
 exit 0

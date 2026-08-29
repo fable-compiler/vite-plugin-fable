@@ -12,11 +12,11 @@ type Path with
     static member CombineNormalize ([<ParamArray>] parts : string array) = Path.Combine parts |> Path.GetFullPath
 
 let fableLibrary =
-    Path.CombineNormalize (__SOURCE_DIRECTORY__, "../node_modules/@fable-org/fable-library-js")
+    Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../../node_modules/@fable-org/fable-library-js")
 
 let sampleApp =
     {
-        Project = Path.CombineNormalize (__SOURCE_DIRECTORY__, "../sample-project/App.fsproj")
+        Project = Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../../sample-project/App.fsproj")
         FableLibrary = fableLibrary
         Configuration = "Release"
         Exclude = Array.empty
@@ -25,7 +25,7 @@ let sampleApp =
 
 let telplin =
     {
-        Project = Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../telplin/tool/client/OnlineTool.fsproj")
+        Project = Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../../../telplin/tool/client/OnlineTool.fsproj")
         FableLibrary = fableLibrary
         Configuration = "Debug"
         Exclude = Array.empty
@@ -35,7 +35,10 @@ let telplin =
 let fantomasTools =
     {
         Project =
-            Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../fantomas-tools/src/client/fsharp/FantomasTools.fsproj")
+            Path.CombineNormalize (
+                __SOURCE_DIRECTORY__,
+                "../../../../fantomas-tools/src/client/fsharp/FantomasTools.fsproj"
+            )
         FableLibrary = fableLibrary
         Configuration = "Debug"
         Exclude = Array.empty
@@ -79,7 +82,7 @@ let DebugTest () =
 
         printfn "response: %A" compileFiles
         client.Dispose ()
-        (daemon :> IDisposable).Dispose ()
+        (daemon :> IDisposable).Dispose()
 
         Assert.Pass ()
     }

@@ -43,20 +43,22 @@ module HTML =
     let mapLogEntriesToListItems (logEntries : LogEntry seq) =
         logEntries
         |> Seq.map (fun entry ->
-            li [] [
-                strong [] [ str entry.Level ]
-                time [] [ str (entry.TimeStamp.ToString "HH:mm:ss.fff") ]
-                pre [] [ str entry.Message ]
-            ]
+            li
+                []
+                [
+                    strong [] [ str entry.Level ]
+                    time [] [ str (entry.TimeStamp.ToString "HH:mm:ss.fff") ]
+                    pre [] [ str entry.Message ]
+                ]
         )
         |> fragment []
         |> Fable.ReactServer.renderToString
 
 /// Dictionary of client and how many messages they received
-let connectedClients = ConcurrentDictionary<WebSocket, int> ()
+let connectedClients = ConcurrentDictionary<WebSocket, int>()
 
 type InMemoryLogger() =
-    let entries = Queue<LogEntry> ()
+    let entries = Queue<LogEntry>()
 
     let broadCastNewMessages () =
         for KeyValue (client, currentCount) in connectedClients do
@@ -125,13 +127,14 @@ let webApp (logger : InMemoryLogger) : WebPart =
         let html = logger.All |> HTML.mapLogEntriesToListItems
         (OK html >=> Writers.setMimeType "text/html") ctx
 
-    choose [
-        path "/ws" >=> handShake (ws logger)
-        GET >=> path "/" >=> Files.browseFile homeFolder "index.html"
-        GET >=> path "/all" >=> allLogs
-        GET >=> Files.browseHome
-        RequestErrors.NOT_FOUND "Page not found."
-    ]
+    choose
+        [
+            path "/ws" >=> handShake (ws logger)
+            GET >=> path "/" >=> Files.browseFile homeFolder "index.html"
+            GET >=> path "/all" >=> allLogs
+            GET >=> Files.browseHome
+            RequestErrors.NOT_FOUND "Page not found."
+        ]
 
 let startWebserver (logger : InMemoryLogger) (cancellationToken : CancellationToken) : Async<unit> =
     let conf =

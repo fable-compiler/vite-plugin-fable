@@ -16,4 +16,4 @@ h1Element.textContent <- $"Dynamic Fable text %i{r}! %s{someJsonString}"
 open React
 
 let app = document.querySelector "#app"
-ReactDom.createRoot(app).render (JSX.create Components.Component.Component [])
+ReactDom.createRoot(app).render(JSX.create Components.Component.Component [])

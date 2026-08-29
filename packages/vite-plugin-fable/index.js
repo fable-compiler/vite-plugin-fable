@@ -3,8 +3,7 @@ import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { JSONRPCEndpoint } from "ts-lsp-client";
-import { normalizePath } from "vite";
-import { transform } from "esbuild";
+import { normalizePath, transformWithOxc } from "vite";
 import { filter, map, bufferTime, Subject } from "rxjs";
 import colors from "picocolors";
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/withResolvers
@@ -19,15 +18,13 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const fableDaemon = path.join(currentDir, "bin/Fable.Daemon.dll");
 
 if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
-  console.log(
-    `Running daemon in debug mode, visit http://localhost:9014 to view logs`,
-  );
+  console.log(`Running daemon in debug mode, visit http://localhost:9014 to view logs`);
 }
 
 /**
  * @typedef {Object} PluginOptions
  * @property {string} [fsproj] - The main fsproj to load
- * @property {'transform' | 'preserve' | 'automatic' | null} [jsx] - Apply JSX transformation after Fable compilation: https://esbuild.github.io/api/#transformation
+ * @property {'transform' | 'preserve' | 'automatic' | null} [jsx] - Apply JSX transformation after Fable compilation. 'transform' uses the classic runtime, 'automatic' the automatic runtime: https://oxc.rs/docs/guide/usage/transformer/jsx
  * @property {Boolean} [noReflection] - Pass noReflection value to Fable.Compiler
  * @property {string[]} [exclude] - Pass exclude to Fable.Compiler
  */
@@ -130,18 +127,11 @@ export default function fablePlugin(userConfig) {
    @returns {Promise<string>}
    */
   async function getFableLibrary() {
-    const fableLibraryInOwnNodeModules = path.join(
-      currentDir,
-      "node_modules/@fable-org/fable-library-js",
+    // Resolve through the module system so hoisted, isolated and pnpm-style layouts all work.
+    const packageJson = fileURLToPath(
+      import.meta.resolve("@fable-org/fable-library-js/package.json"),
     );
-    try {
-      await fs.access(fableLibraryInOwnNodeModules, fs.constants.F_OK);
-      return normalizePath(fableLibraryInOwnNodeModules);
-    } catch (e) {
-      return normalizePath(
-        path.join(currentDir, "../@fable-org/fable-library-js"),
-      );
-    }
+    return normalizePath(path.dirname(packageJson));
   }
 
   /**
@@ -256,10 +246,7 @@ export default function fablePlugin(userConfig) {
    */
   async function projectChanged(addWatchFile, projectFiles) {
     try {
-      logInfo(
-        "projectChanged",
-        `dependent file ${Array.from(projectFiles).join("\n")} changed.`,
-      );
+      logInfo("projectChanged", `dependent file ${Array.from(projectFiles).join("\n")} changed.`);
       state.sourceFiles.clear();
       state.compilableFiles.clear();
       state.dependentFiles.clear();
@@ -290,10 +277,7 @@ export default function fablePlugin(userConfig) {
       ) {
         const compiledFSharpFiles = compilationResult.fields[0];
 
-        logDebug(
-          "fsharpFileChanged",
-          `\n${Object.keys(compiledFSharpFiles).join("\n")} compiled`,
-        );
+        logDebug("fsharpFileChanged", `\n${Object.keys(compiledFSharpFiles).join("\n")} compiled`);
 
         for (const [key, value] of Object.entries(compiledFSharpFiles)) {
           const normalizedFileName = normalizePath(key);
@@ -304,10 +288,7 @@ export default function fablePlugin(userConfig) {
         logDiagnostics(diagnostics);
         return diagnostics;
       } else {
-        logError(
-          "watchChange",
-          `compilation of ${files} failed, ${compilationResult.fields[0]}`,
-        );
+        logError("watchChange", `compilation of ${files} failed, ${compilationResult.fields[0]}`);
         return [];
       }
     } catch (e) {
@@ -352,11 +333,11 @@ export default function fablePlugin(userConfig) {
     const frame = codeFrameColumns(fileContent, {
       start: {
         line: diagnostic.range.startLine,
-        col: diagnostic.range.startColumn,
+        column: diagnostic.range.startColumn,
       },
       end: {
         line: diagnostic.range.endLine,
-        col: diagnostic.range.endColumn,
+        column: diagnostic.range.endColumn,
       },
     });
     return {
@@ -380,12 +361,10 @@ export default function fablePlugin(userConfig) {
     enforce: "pre",
     configResolved: async function (resolvedConfig) {
       state.logger = resolvedConfig.logger;
-      state.configuration =
-        resolvedConfig.env.MODE === "production" ? "Release" : "Debug";
+      state.configuration = resolvedConfig.env.MODE === "production" ? "Release" : "Debug";
       state.isBuild = resolvedConfig.command === "build";
       logDebug("configResolved", `Configuration: ${state.configuration}`);
-      const configDir =
-        resolvedConfig.configFile && path.dirname(resolvedConfig.configFile);
+      const configDir = resolvedConfig.configFile && path.dirname(resolvedConfig.configFile);
 
       if (state.config && state.config.fsproj) {
         state.fsproj = state.config.fsproj;
@@ -394,10 +373,7 @@ export default function fablePlugin(userConfig) {
       }
 
       if (!state.fsproj) {
-        logCritical(
-          "configResolved",
-          `No .fsproj file was found in ${configDir}`,
-        );
+        logCritical("configResolved", `No .fsproj file was found in ${configDir}`);
       } else {
         logInfo("configResolved", `Entry fsproj ${state.fsproj}`);
       }
@@ -409,16 +385,10 @@ export default function fablePlugin(userConfig) {
           shell: true,
           stdio: "pipe",
         });
-        state.endpoint = new JSONRPCEndpoint(
-          state.dotnetProcess.stdin,
-          state.dotnetProcess.stdout,
-        );
+        state.endpoint = new JSONRPCEndpoint(state.dotnetProcess.stdin, state.dotnetProcess.stdout);
 
         if (state.isBuild) {
-          await projectChanged(
-            this.addWatchFile.bind(this),
-            new Set([state.fsproj]),
-          );
+          await projectChanged(this.addWatchFile.bind(this), new Set([state.fsproj]));
         } else {
           state.pendingChanges = pendingChangesSubject
             .pipe(
@@ -430,18 +400,13 @@ export default function fablePlugin(userConfig) {
                   projectFiles: new Set(),
                 });
               }),
-              filter(
-                (state) => state.projectChanged || state.fsharpFiles.size > 0,
-              ),
+              filter((state) => state.projectChanged || state.fsharpFiles.size > 0),
             )
             .subscribe(async (pendingChanges) => {
               let diagnostics = [];
 
               if (pendingChanges.projectChanged) {
-                await projectChanged(
-                  this.addWatchFile.bind(this),
-                  pendingChanges.projectFiles,
-                );
+                await projectChanged(this.addWatchFile.bind(this), pendingChanges.projectFiles);
               } else {
                 const files = Array.from(pendingChanges.fsharpFiles);
                 logDebug("subscribe", files.join("\n"));
@@ -475,11 +440,14 @@ export default function fablePlugin(userConfig) {
           // If Fable outputted JSX, we still need to transform this.
           // @vitejs/plugin-react does not do this.
           if (state.config.jsx) {
-            const esbuildResult = await transform(code, {
-              loader: "jsx",
-              jsx: state.config.jsx,
+            /** @type {'automatic' | 'classic'} */
+            const runtime = state.config.jsx === "automatic" ? "automatic" : "classic";
+            const jsx = state.config.jsx === "preserve" ? "preserve" : { runtime };
+            const oxcResult = await transformWithOxc(code, id, {
+              lang: "jsx",
+              jsx,
             });
-            code = esbuildResult.code;
+            code = oxcResult.code;
           }
           return {
             code: code,
@@ -488,7 +456,7 @@ export default function fablePlugin(userConfig) {
         } else {
           logWarn("transform", `${id} is not part of compilableFiles.`);
         }
-      }
+      },
     },
     watchChange: async function (id, change) {
       if (state.sourceFiles.size !== 0 && state.dependentFiles.has(id)) {
@@ -513,9 +481,7 @@ export default function fablePlugin(userConfig) {
         const diagnostics = await state.hotPromiseWithResolvers.promise;
         logDebug("handleHotUpdate", `leave for ${file}`);
 
-        const errorDiagnostic = diagnostics.find(
-          (diag) => diag.severity === "Error",
-        );
+        const errorDiagnostic = diagnostics.find((diag) => diag.severity === "Error");
         if (errorDiagnostic) {
           const msg = await makeHmrError(errorDiagnostic);
           console.log(msg);

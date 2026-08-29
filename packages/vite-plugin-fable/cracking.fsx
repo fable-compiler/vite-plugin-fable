@@ -1,3 +1,7 @@
+#!/usr/bin/env -S dotnet fsi
+// Scratch script to try out project cracking without going through the Vite plugin.
+// Run `bun run postinstall` (or `dotnet publish Fable.Daemon -o ./bin`) first so `./bin` exists.
+// Usage: ./cracking.fsx path/to/MyProject.fsproj (defaults to the sample project)
 #I "./bin"
 #r "Fable.AST"
 #r "Fable.Compiler"
@@ -7,6 +11,7 @@
 
 open System.IO
 open Microsoft.Extensions.Logging
+open Fable.Compiler
 open Fable.Compiler.Util
 open Fable.Compiler.ProjectCracker
 open Fable.Daemon
@@ -16,24 +21,28 @@ fsi.AddPrinter (fun (x : ProjectOptionsResponse) ->
 )
 
 let fsproj =
-    // @"C:\Users\nojaf\Projects\telplin\tool\client\OnlineTool.fsproj"
-    // "/home/nojaf/projects/fantomas-tools/src/client/fsharp/FantomasTools.fsproj"
-    Path.Combine (__SOURCE_DIRECTORY__, "sample-project/App.fsproj")
-    |> Path.GetFullPath
+    let lastArg = Array.last fsi.CommandLineArgs
+
+    if lastArg.EndsWith (".fsproj", System.StringComparison.OrdinalIgnoreCase) then
+        Path.GetFullPath lastArg
+    else
+        Path.Combine (__SOURCE_DIRECTORY__, "../../sample-project/App.fsproj")
+        |> Path.GetFullPath
 
 let cliArgs : CliArgs =
     {
         ProjectFile = fsproj
-        RootDir = __SOURCE_DIRECTORY__
+        RootDir = Path.GetDirectoryName fsproj
         OutDir = None
         IsWatch = false
         Precompile = false
         PrecompiledLib = None
         PrintAst = false
-        FableLibraryPath = Some (Path.Combine (__SOURCE_DIRECTORY__, "sample-project/node_modules/fable-library"))
+        FableLibraryPath = Some (Path.Combine (__SOURCE_DIRECTORY__, "../../node_modules/@fable-org/fable-library-js"))
         Configuration = "Debug"
         NoRestore = false
         NoCache = true
+        NoGitignore = true
         NoParallelTypeCheck = false
         SourceMaps = false
         SourceMapsRoot = None
@@ -77,20 +86,17 @@ let logger =
         member x.IsEnabled (_logLevel : LogLevel) : bool = true
     }
 
-let resolver : ProjectCrackerResolver = CoolCatResolver logger
+// Fable's own resolver, no caching involved.
+let fableResolver : ProjectCrackerResolver = MSBuildCrackerResolver ()
+
+// The resolver the daemon uses: Fable's resolver wrapped with the design time build cache.
+let cachedResolver : ProjectCrackerResolver = CachedMSBuildCrackerResolver logger
 
 #time "on"
 
-let result = resolver.GetProjectOptionsFromProjectFile (true, options, fsproj)
+let result = cachedResolver.GetProjectOptionsFromProjectFile (true, options, fsproj)
 
 #time "off"
 
-// result.ProjectReferences
-
 for option in result.ProjectOptions do
     printfn "%s" option
-
-
-open System
-
-DateTime.Now.ToString ("HH:mm:ss.fff")
