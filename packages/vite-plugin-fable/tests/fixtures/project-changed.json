@@ -1,0 +1,26 @@
+{
+  "case": "Success",
+  "fields": {
+    "sourceFiles": [
+      "/project/Math.fs",
+      "/project/Library.fs"
+    ],
+    "diagnostics": [
+      {
+        "errorNumberText": "FS0025",
+        "message": "Incomplete pattern matches on this expression.",
+        "range": {
+          "startLine": 3,
+          "startColumn": 4,
+          "endLine": 3,
+          "endColumn": 9
+        },
+        "severity": "Warning",
+        "fileName": "/project/Math.fs"
+      }
+    ],
+    "dependentFiles": [
+      "/project/App.fsproj"
+    ]
+  }
+}

@@ -3,6 +3,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { JSONRPCEndpoint } from "ts-lsp-client";
+import { decodeCompile, decodeInitialCompile, decodeProjectChanged } from "./wire.js";
 import type {
   CompileResult,
   DaemonLogger,
@@ -16,17 +17,6 @@ const currentDir: string = path.dirname(fileURLToPath(import.meta.url));
 // The plugin is emitted to `dist/`, the daemon is published to `bin/` at the package root.
 const daemonAssembly: string = path.join(currentDir, "..", "bin", "Fable.Daemon.dll");
 
-/**
- * A discriminated union case as it arrives over JSON-RPC. The wire format is positional: `fields`
- * mirrors the declaration order of the F# case, so reordering the fields of a case in `Types.fs`
- * changes what every index below means, with no compile error on either side. Private to this
- * module so that hazard stays in one file rather than spreading to every caller.
- */
-interface FSharpDiscriminatedUnion {
-  case: string;
-  fields: any[];
-}
-
 /** The SDK advice only fits a daemon that never started; a mid-session crash is a different bug. */
 function describeStartFailure(reason: string): string {
   return `${reason}\nvite-plugin-fable needs the .NET 10 SDK on your PATH; check that \`dotnet --version\` works.`;
@@ -36,7 +26,7 @@ function describeStartFailure(reason: string): string {
  * Spawns `Fable.Daemon` and returns a handle to it.
  *
  * The returned daemon owns the child process for its whole lifetime: callers never see the process,
- * the JSON-RPC endpoint, or the positional wire format. Requests reject if the daemon dies rather
+ * the JSON-RPC endpoint, or the JSON. Requests reject if the daemon dies rather
  * than awaiting a reply that will never arrive, so a missing .NET SDK surfaces as an error instead
  * of a hang. Call {@link FableDaemon.dispose} exactly once when finished.
  */
@@ -83,41 +73,24 @@ export function startDaemon(logger: DaemonLogger): FableDaemon {
   // Nothing awaits this until it is raced, so keep Node from flagging an unhandled rejection.
   failed.catch(() => {});
 
-  async function send(method: string, params?: unknown): Promise<FSharpDiscriminatedUnion> {
+  async function send(method: string, params?: unknown): Promise<unknown> {
     if (disposed) {
       throw new Error("The Fable daemon is not running.");
     }
-    return Promise.race([
-      endpoint.send(method, params) as Promise<FSharpDiscriminatedUnion>,
-      failed,
-    ]);
-  }
-
-  /** Unwraps a `Success` case, turning any other case into an error. */
-  function unwrap(result: FSharpDiscriminatedUnion): any[] {
-    if (result.case !== "Success") {
-      throw new Error(result.fields[0] || "Unknown error occurred");
-    }
-    return result.fields;
+    return Promise.race([endpoint.send(method, params) as Promise<unknown>, failed]);
   }
 
   return {
     async projectChanged(request: ProjectRequest): Promise<ProjectFileData> {
-      const fields: any[] = unwrap(await send("fable/project-changed", request));
-      return { sourceFiles: fields[0], diagnostics: fields[1], dependentFiles: fields[2] };
+      return decodeProjectChanged(await send("fable/project-changed", request));
     },
 
     async initialCompile(): Promise<Record<string, string>> {
-      const fields: any[] = unwrap(await send("fable/initial-compile"));
-      return fields[0];
+      return decodeInitialCompile(await send("fable/initial-compile"));
     },
 
     async compile(files: string[]): Promise<CompileResult> {
-      const result: FSharpDiscriminatedUnion = await send("fable/compile", { fileNames: files });
-      if (result.case !== "Success" || !result.fields || result.fields.length === 0) {
-        throw new Error(result.fields?.[0] || "Unknown error occurred");
-      }
-      return { compiledFiles: result.fields[0], diagnostics: result.fields[1] ?? [] };
+      return decodeCompile(await send("fable/compile", { fileNames: files }));
     },
 
     dispose(): void {

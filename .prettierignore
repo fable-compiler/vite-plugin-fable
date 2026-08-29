@@ -1,0 +1,6 @@
+# Read by oxfmt, which looks for .gitignore and .prettierignore when no --ignore-path is given.
+#
+# These are golden files: the exact JSON the daemon serialises, compared byte for byte by the
+# contract tests on both sides. A formatter rewriting them would break that comparison and hide the
+# thing they exist to catch.
+packages/vite-plugin-fable/tests/fixtures/
