@@ -2,7 +2,7 @@
 
 Nothing here is done. Items are deleted as they land, so what remains is open work, a question nobody has answered, or a decision recorded so it does not get re-litigated. Finished work belongs in `CHANGELOG.md`, not here. Each item has enough context to be picked up independently.
 
-Item 1 is blocked upstream and can only be tracked and item 2 is on hold. Items 3 and 4 are projects, item 5 is a smaller one, item 6 records a rejected decision and item 7 is loose ends.
+Item 1 is blocked upstream and can only be tracked and item 2 is on hold. Item 3 is a project, items 4 and 5 are smaller ones, item 6 records a rejected decision and item 7 is loose ends.
 
 References into `~/Projects/Fable` are against Fable 5.14, the version in the workspace catalog.
 
@@ -29,6 +29,17 @@ Only `Fable.Daemon/debug/index.html` and the WebSocket feed that fills it. `Debu
 **What is worth surfacing**
 
 The plugin already receives some of this over JSON-RPC, so a panel could be fed from the JavaScript side: the current `compilableFiles` map, the last set of diagnostics, cracking versus compile timings, and which files each hot-update batch recompiled. The rest never crosses JSON-RPC — project options, the watched MSBuild inputs, the design-time cache hit or miss with its reason — so a panel wanting those reads the daemon's `/api` rather than duplicating the state.
+
+**The shape to try first: a panel that is a view over `/api`**
+
+Rather than feeding a panel from the JavaScript side, have it fetch the endpoints directly. The panel then holds no state of its own, there is one source of truth for what the daemon did, and `/api` gets a second consumer keeping it honest. It also makes the panel small enough to be worth building, which the "delete the HTML page" argument on its own no longer is.
+
+Two things in the way, neither investigated:
+
+- **Cross-origin.** DevTools serves its UI from its own port (9999 by default), so a panel fetching `http://127.0.0.1:9014/api` is a cross-origin request, and `Debug.fs` sets no CORS headers. Either the endpoints grow `Access-Control-Allow-Origin` (cheap, and the server is loopback-only and already gated behind `debug`), or the DevTools node side proxies them, which also solves the next point.
+- **Finding the port.** A browser cannot read `$TMPDIR/vite-plugin-fable/daemon-<pid>.json`, and the port is whatever `VITE_PLUGIN_FABLE_DEBUG_PORT` said. Something node-side has to hand the panel its URL, and the plugin is the only thing that knows.
+
+What this shape would still not show is the plugin's own view: which files a hot-update batch recompiled, and the coalescing behaviour around it. That is plugin-side state that never reaches the daemon, so a panel wanting it needs both sources after all.
 
 **How it actually runs**, which is not shaped like `vite-plugin-inspect`
 
@@ -84,60 +95,41 @@ Deciding whether a module is safe to re-run needs to know whether its top-level 
 - [ ] Decide whether this is worth pursuing at all. A reload on a non-component edit is not obviously bad, and the component path — the one people iterate on — already works.
 - [ ] If yes, raise the "does this module have top-level effects" question with Fable before building anything on this side.
 
-## 4. Replace `postinstall` with a prebuilt daemon package
+## 4. Shipping the daemon: what is left
 
-**Why this matters most**
+The `postinstall` half of this landed: `vite-plugin-fable` ships a framework-dependent publish of `Fable.Daemon` in `bin/`, there is no lifecycle script, and `--ignore-scripts` installs work. The .NET SDK is still required, because cracking shells out to `dotnet msbuild` (`Fable.Daemon/MSBuild.fs:18`, and Fable's own `MSBuildCrackerResolver` does the same). Roughly 14 MB compressed, 35 MB unpacked.
 
-Not performance — reliability. `packages/vite-plugin-fable/package.json` `postinstall` runs `dotnet publish` on the consumer's machine, and package managers increasingly refuse to run lifecycle scripts by default: bun only runs them for `trustedDependencies`, pnpm gates them behind `onlyBuiltDependencies`, and `npm --ignore-scripts` is common in CI and locked-down environments. When the script is skipped the install still _succeeds_, no `bin/` is produced, and the failure surfaces much later as a confusing `buildStart` error. Getting off `postinstall` removes a whole class of "it doesn't work on my machine" reports. The compile-on-install cost (full NuGet restore, needs network, needs the right SDK) is a bonus.
+Two things were considered and are worth not re-deriving.
 
-**Decision: one prebuilt npm package containing portable IL**
+**A separate `@fable-org/fable-daemon` package: mostly moot now**
 
-A framework-dependent publish of `Fable.Daemon` is portable IL that runs anywhere the .NET 10 runtime does, so this is a single **plain dependency** — not `optionalDependencies`, no `os`/`cpu` fields, no per-platform publish matrix:
-
-```
-vite-plugin-fable  →  dependencies: { "<daemon package>": "<exact plugin version>" }
-```
-
-The bits then arrive at `npm install` like everything else, the lockfile pins them so plugin/daemon skew is structurally impossible, and the existing `node_modules` CI cache covers them. The .NET SDK is still required — project cracking shells out to `dotnet msbuild` (`Fable.Daemon/MSBuild.fs:18`, and Fable's own `MSBuildCrackerResolver` does the same) — and that is accepted; say so plainly in the README.
-
-**Naming: leave room for a future split**
-
-Whatever the single package is called now becomes awkward if platform packages arrive later, so pick a name that does not encode the current choice (nothing like `-portable`). The ecosystem convention is a scope for the platform packages — `esbuild` + `@esbuild/darwin-arm64`, `rolldown` + `@rolldown/binding-darwin-arm64`, `oxfmt` + `@oxfmt/binding-darwin-arm64`.
-
-The `@fable-org` scope already exists on npm (`@fable-org/fable-library-js`), so something like `@fable-org/fable-daemon` leaves `@fable-org/fable-daemon-<rid>` free later. The daemon is also not really Vite-specific — it is a Fable compilation daemon that this plugin happens to drive — so a name that does not mention Vite is both more accurate and more reusable. Coordinate with the Fable org before claiming it.
+The plan was a prebuilt daemon as its own package, a plain dependency pinned to the exact plugin version, so the lockfile made plugin/daemon skew structurally impossible. Bundling gives that for free, since they are one package, so the remaining argument is only about not re-downloading the bits on every plugin patch release, which npm's tarball-per-version model does not avoid anyway. Revisit only if the per-RID split below happens, where a scope for platform packages (`esbuild` + `@esbuild/darwin-arm64`, `rolldown` + `@rolldown/binding-darwin-arm64`) is the ecosystem convention. `@fable-org` already exists on npm, so `@fable-org/fable-daemon-<rid>` is available; coordinate with the Fable org before claiming it, and pick a name that does not mention Vite, since the daemon is not Vite-specific.
 
 **Deferred: per-RID ReadyToRun packages**
 
-Measured on this repo, `sample-project`, warm caches, four `vite build` runs each:
+What ships is portable IL, so the JIT cost the ReadyToRun build avoided is now paid on every `vite dev` start and every `vite build`. Measured on `sample-project`, warm caches:
 
 | variant                                                 | size  | runs                       |
 | ------------------------------------------------------- | ----- | -------------------------- |
 | ReadyToRun (`--ucr -p:PublishReadyToRun=true`, per-RID) | 77 MB | 1.41s, 1.41s, 1.40s, 1.42s |
-| portable IL (framework-dependent)                       | 33 MB | 2.15s, 2.17s, 2.15s, 2.13s |
+| portable IL (framework-dependent, what ships)           | 33 MB | 2.15s, 2.17s, 2.15s, 2.13s |
 
-About **0.74s, roughly 35% faster** with ReadyToRun, very low variance. Caches were warm, so that is JIT across the type-check and compile path, not process startup, and it is paid on every `vite dev` start and every `vite build`.
-
-Not acted on yet, for two reasons:
+Not acted on, for two reasons that still hold:
 
 - **The 35% flatters ReadyToRun.** `sample-project` is five files. JIT cost is roughly fixed — the same FCS code paths get compiled regardless of project size — so on a real project the absolute delta stays near 0.7s while the percentage collapses. Re-measure against something like the telplin or fantomas-tools projects in `DebugTests.fs` before treating 35% as real.
-- **Its value has already shrunk.** The dev server no longer blocks on the first compile, so the 0.74s is spent behind a server that is already listening rather than in front of a terminal with no URL. That makes a five-package matrix much harder to justify.
+- **Its value has already shrunk.** The dev server no longer blocks on the first compile, so the 0.74s is spent behind a server that is already listening rather than in front of a terminal with no URL.
 
 Cost if it is ever taken up: five or so packages at 77 MB each to publish (a consumer downloads one), a per-RID CI matrix, `os`/`cpu` platform packages, a resolution shim on the JS side, and a fallback when no platform package matches.
 
 **Also considered: a multi-RID .NET tool**
 
-.NET 10 can publish a tool carrying several RuntimeIdentifiers with the CLI selecting one at run time, invoked via `dotnet tool exec` / `dnx` without a permanent install (verified working on SDK 10.0.400). It fits, since the SDK is required anyway, and it would move RID selection out of npm entirely — see `baronfel/multi-rid-tool` for `PackAsTool` / `ToolCommandName` / `dotnet pack -p ToolType=<agnostic|specific|self-contained|trimmed|aot>`.
+.NET 10 can publish a tool carrying several RuntimeIdentifiers with the CLI selecting one at run time, invoked via `dotnet tool exec` / `dnx` without a permanent install (verified working on SDK 10.0.400). See `baronfel/multi-rid-tool` for `PackAsTool` / `ToolCommandName` / `dotnet pack -p ToolType=<agnostic|specific|self-contained|trimmed|aot>`.
 
-Passed over because the bits would then arrive on first `vite dev` rather than at install, putting a NuGet download in front of a dev server that already blocks on startup, and shifting the failure mode for restricted networks from install time to first run. Worth revisiting only if the per-RID split happens, where the CLI doing RID selection beats maintaining `os`/`cpu` packages. Self-contained, trimmed and AOT are ruled out regardless: the SDK is present anyway, and FSharp.Compiler.Service is reflection-heavy enough that trimming would break things (`Caching.fableCompilerVersion` reads the Fable.Compiler version via reflection).
+Passed over because the bits would then arrive on first `vite dev` rather than at install, shifting the failure mode for restricted networks from install time to first run. Worth revisiting only if the per-RID split happens, where the CLI doing RID selection beats maintaining `os`/`cpu` packages. Self-contained, trimmed and AOT are ruled out regardless: the SDK is present anyway, and FSharp.Compiler.Service is reflection-heavy enough that trimming would break things (`Caching.fableCompilerVersion` reads the Fable.Compiler version via reflection).
 
 **To do**
 
-- [ ] Agree the package name with the Fable org, then publish the portable-IL daemon from CI, version-locked to the plugin release.
-- [ ] Resolve the daemon through the module system (`import.meta.resolve`), the way `getFableLibrary` already resolves `fable-library`, replacing the hard-coded `path.join(currentDir, "..", "bin", "Fable.Daemon.dll")`.
-- [ ] Drop `postinstall`, the F# sources and `Directory.*.props` from the published plugin's `files`.
-- [ ] Keep `bun run build:daemon` at the repo root for local work so the sample project runs against the working tree, not the published package.
-- [ ] Give a clear error when the daemon package cannot be resolved. A missing .NET SDK is already detected spawn-side and fails fast.
-- [ ] README: state that the .NET 10 SDK is required, and why.
+- [ ] README: state that the .NET 10 SDK is required, and why. `docs/getting-started.md` says it; the README does not.
 
 ## 5. Cache invalidation: an explicit `<Import>` is invisible
 

@@ -39,7 +39,7 @@ jobs:
         run: bun run test:daemon
 
       - name: Build daemon
-        run: bun run --cwd packages/vite-plugin-fable postinstall
+        run: bun run build:daemon
 
       - name: Build sample
         run: bun run build

@@ -1,6 +1,7 @@
 #!/usr/bin/env -S dotnet fsi
 // Scratch script to try out project cracking without going through the Vite plugin.
-// Run `bun run postinstall` (or `dotnet publish Fable.Daemon -o ./bin`) first so `./bin` exists.
+// It runs against `./bin`, which ships with the package; in this repo, `bun run build:daemon`
+// fills it.
 // Usage: ./cracking.fsx path/to/MyProject.fsproj (defaults to the sample project)
 #I "./bin"
 #r "Fable.AST"
@@ -29,6 +30,21 @@ let fsproj =
         Path.Combine (__SOURCE_DIRECTORY__, "../../sample-project/App.fsproj")
         |> Path.GetFullPath
 
+/// Where `fable-library` sits depends on the install layout, and the previous hard-coded
+/// `../../node_modules` guess had not been right in this repo since it moved to bun's isolated
+/// installs. It went unnoticed because cracking is an MSBuild evaluation that never reads the path.
+/// Candidates in order: this package's own `node_modules` (isolated installs, and the repo), a
+/// hoisted install next to `vite-plugin-fable`, and a repo without isolated installs.
+let fableLibrary =
+    [
+        "node_modules/@fable-org/fable-library-js"
+        "../@fable-org/fable-library-js"
+        "../../node_modules/@fable-org/fable-library-js"
+    ]
+    |> List.map (fun candidate -> Path.GetFullPath (Path.Combine (__SOURCE_DIRECTORY__, candidate)))
+    |> List.tryFind Directory.Exists
+    |> Option.defaultWith (fun () -> failwith "Could not find @fable-org/fable-library-js next to this script.")
+
 let cliArgs : CliArgs =
     {
         ProjectFile = fsproj
@@ -38,7 +54,7 @@ let cliArgs : CliArgs =
         Precompile = false
         PrecompiledLib = None
         PrintAst = false
-        FableLibraryPath = Some (Path.Combine (__SOURCE_DIRECTORY__, "../../node_modules/@fable-org/fable-library-js"))
+        FableLibraryPath = Some fableLibrary
         Configuration = "Debug"
         NoRestore = false
         NoCache = true

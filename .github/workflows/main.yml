@@ -46,7 +46,7 @@ jobs:
         run: bun run test:daemon
 
       - name: Build daemon
-        run: bun run --cwd packages/vite-plugin-fable postinstall
+        run: bun run build:daemon
 
       - name: Build docs
         run: dotnet fsdocs build --noapidocs --projects "$(pwd)/packages/vite-plugin-fable/Fable.Daemon/Fable.Daemon.fsproj"

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { JSONRPCEndpoint } from "ts-lsp-client";
@@ -32,6 +33,16 @@ function describeStartFailure(reason: string): string {
  * of a hang. Call {@link FableDaemon.dispose} exactly once when finished.
  */
 export function startDaemon(logger: DaemonLogger, options: DaemonOptions): FableDaemon {
+  // The daemon ships prebuilt in this package, so a missing assembly is a broken install rather
+  // than a build step nobody ran. Saying so beats `dotnet`'s own error arriving on stderr behind
+  // "the Fable daemon stopped unexpectedly".
+  if (!existsSync(daemonAssembly)) {
+    throw new Error(
+      `vite-plugin-fable is missing its compiler: ${daemonAssembly} does not exist.\n` +
+        `The package ships it prebuilt, so this install is incomplete; reinstalling usually fixes it. ` +
+        `When working on the plugin itself, run \`bun run build:daemon\`.`,
+    );
+  }
   const dotnetProcess: ChildProcessWithoutNullStreams = spawn(
     "dotnet",
     [daemonAssembly, "--stdio"],

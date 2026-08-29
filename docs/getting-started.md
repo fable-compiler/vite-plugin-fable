@@ -16,13 +16,14 @@ First you need a new Vite project:
 
 Next, you need to install the `vite-plugin-fable` package:
 
-<vpf-command npm="npm install -D vite-plugin-fable" bun="bun install -D --trust vite-plugin-fable"></vpf-command>
+<vpf-command npm="npm install -D vite-plugin-fable" bun="bun install -D vite-plugin-fable"></vpf-command>
 
-It is important that the _post-install script_ of the plugin did run. The first time this runs, it can take some time.
+That is the whole install. The compiler ships inside the package, so there is no post-install step
+to trust, no lifecycle script to run, and nothing to compile on your machine. Installing with
+`--ignore-scripts` is fine.
 
-If for some reason it didn't run, please manually invoke:
-
-<vpf-command npm="npm --prefix ./node_modules/vite-plugin-fable/ run postinstall" bun="bun run --cwd ./node_modules/vite-plugin-fable/ postinstall"></vpf-command>
+You do still need the **.NET 10 SDK** on your `PATH`: reading your `.fsproj` means asking MSBuild
+about it, and that is `dotnet msbuild`. Check with `dotnet --version`.
 
 _Note: you don't need to install Fable as a dotnet tool when using this plugin._
 
