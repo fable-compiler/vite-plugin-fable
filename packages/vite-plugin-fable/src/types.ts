@@ -50,10 +50,14 @@ export interface PluginOptions {
   exclude?: string[];
 }
 
+/** {@link PluginOptions} once the defaults have been applied, so nothing is optional. */
+export type ResolvedPluginOptions = Required<Omit<PluginOptions, "fsproj">> &
+  Pick<PluginOptions, "fsproj">;
+
 /** Everything the plugin instance carries between hook invocations. */
 export interface PluginState {
   /** The user options merged over the plugin defaults. */
-  config: PluginOptions;
+  config: ResolvedPluginOptions;
   /** Vite's logger once `configResolved` ran, a console-backed stand-in before that. */
   logger: Logger;
   /** The running daemon, or `null` before `buildStart` and after `buildEnd`. */

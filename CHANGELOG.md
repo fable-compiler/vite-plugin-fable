@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- TypeScript `strict` is on. That surfaced a real bug: `configResolved` derived the project directory from `resolvedConfig.configFile`, which is optional, so a project without a Vite config file (or one created programmatically) reached `fs.readdir(undefined)`. It now uses `resolvedConfig.root`, which is always resolved and is also the correct directory when `root` differs from the config file's location. A missing `.fsproj` is now an error rather than a `null` handed to the daemon.
+- oxlint warnings fail the lint instead of being reported and ignored.
+- `sample-project` runs its scripts on the Bun runtime through its own `bunfig.toml` rather than `bunx --bun` in each script, so the scripts are plain `vite`, `vite build` and `vite preview`. Bun only reads the `bunfig.toml` in the directory a command starts from, so the one at the repo root does not cover it.
 - The sample project gained a `Greeting.fsi` / `Greeting.fs` pair whose output is rendered into the page heading, so signature-file behaviour can be exercised by hand: editing the implementation updates the heading in place, and breaking the signature surfaces the error against the implementation.
 - Hot updates use Vite's `hotUpdate` hook instead of the deprecated `handleHotUpdate`, which also means created and deleted files now reach the plugin — `handleHotUpdate` only ever fired for updates.
 - Fixed a hot-update race. Every in-flight change shared one promise, so a file edited while another was compiling was answered by the previous compile's diagnostics and pushed to the browser before it had been compiled at all; its own diagnostics were then discarded. Changes are now coalesced into batches that each carry their own result.

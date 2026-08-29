@@ -1,0 +1,5 @@
+# `bun run` uses Node unless told otherwise, and Bun only reads the bunfig.toml in the
+# directory the command runs from — the one at the repo root does not reach here. This is
+# what keeps the scripts plain `vite` instead of `bunx --bun vite`.
+[run]
+bun = true

@@ -21,6 +21,7 @@ import type {
   PluginOptions,
   PluginState,
   ProjectFileData,
+  ResolvedPluginOptions,
 } from "./types.js";
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
@@ -28,7 +29,7 @@ if (process.env.VITE_PLUGIN_FABLE_DEBUG) {
   console.log(`Running daemon in debug mode, visit http://localhost:9014 to view logs`);
 }
 
-const defaultConfig: PluginOptions = { jsx: null, noReflection: false, exclude: [] };
+const defaultConfig: ResolvedPluginOptions = { jsx: null, noReflection: false, exclude: [] };
 
 /**
  * Initializes and returns a Vite plugin to process the incoming F# project.
@@ -120,7 +121,7 @@ export function createFablePlugin(
   async function getProjectFile(fableLibrary: string): Promise<ProjectFileData> {
     return requireDaemon().projectChanged({
       configuration: state.configuration,
-      project: state.fsproj,
+      project: requireFsproj(),
       fableLibrary,
       exclude: state.config.exclude,
       noReflection: state.config.noReflection,
@@ -350,6 +351,19 @@ export function createFablePlugin(
     return file.endsWith(".fsi") ? `${file.slice(0, -4)}.fs` : file;
   }
 
+  /**
+   * The entry project, or an error. `configResolved` can fail to find one, and every later hook
+   * depends on it, so this is where that turns into a real failure instead of a `null` in flight.
+   */
+  function requireFsproj(): string {
+    if (!state.fsproj) {
+      throw new Error(
+        "No .fsproj was found. Set the `fsproj` plugin option, or put a project file in the Vite root.",
+      );
+    }
+    return state.fsproj;
+  }
+
   function requireDaemon(): FableDaemon {
     if (!state.daemon) {
       throw new Error("The Fable daemon is not running.");
@@ -405,17 +419,17 @@ export function createFablePlugin(
       state.configuration = resolvedConfig.env.MODE === "production" ? "Release" : "Debug";
       state.isBuild = resolvedConfig.command === "build";
       logDebug("configResolved", `Configuration: ${state.configuration}`);
-      const configDir: string | undefined =
-        resolvedConfig.configFile && path.dirname(resolvedConfig.configFile);
+      // `configFile` is optional — there may not be one at all — while `root` is always resolved.
+      const projectDir: string = resolvedConfig.root;
 
-      if (state.config && state.config.fsproj) {
+      if (state.config.fsproj) {
         state.fsproj = state.config.fsproj;
       } else {
-        state.fsproj = await findFsProjFile(configDir);
+        state.fsproj = await findFsProjFile(projectDir);
       }
 
       if (!state.fsproj) {
-        logCritical("configResolved", `No .fsproj file was found in ${configDir}`);
+        logCritical("configResolved", `No .fsproj file was found in ${projectDir}`);
       } else {
         logInfo("configResolved", `Entry fsproj ${state.fsproj}`);
       }
@@ -430,11 +444,12 @@ export function createFablePlugin(
         });
         process.once("SIGINT", onSigint);
 
+        const fsproj: string = requireFsproj();
         if (state.isBuild) {
-          await projectChanged(addWatchFile, new Set([state.fsproj]));
+          await projectChanged(addWatchFile, new Set([fsproj]));
         } else {
           logDebug("buildStart", "Initial project crack");
-          await queueProjectChange(state.fsproj);
+          await queueProjectChange(fsproj);
         }
       } catch (e) {
         logCritical("buildStart", `Unexpected failure during buildStart: ${e}`);
@@ -445,8 +460,8 @@ export function createFablePlugin(
       filter: { id: fsharpFileRegex },
       async handler(src, id) {
         logDebug("transform", id);
-        if (state.compilableFiles.has(id)) {
-          let code: string | undefined = state.compilableFiles.get(id);
+        let code: string | undefined = state.compilableFiles.get(id);
+        if (code !== undefined) {
           // If Fable outputted JSX, we still need to transform this.
           // @vitejs/plugin-react does not do this.
           if (state.config.jsx) {

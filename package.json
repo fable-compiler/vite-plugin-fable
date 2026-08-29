@@ -20,7 +20,7 @@
     "build:plugin": "bun run --cwd packages/vite-plugin-fable build",
     "fmt": "oxfmt && dotnet fantomas .",
     "fmt:check": "oxfmt --check && dotnet fantomas check .",
-    "lint": "oxlint && bun run lint:types",
+    "lint": "oxlint --deny-warnings && bun run lint:types",
     "lint:types": "tsc --noEmit -p tsconfig.scripts.json && bun run --cwd packages/vite-plugin-fable lint:types",
     "test": "bun run test:plugin && bun run test:daemon",
     "test:plugin": "bun run --cwd packages/vite-plugin-fable test",
@@ -35,5 +35,8 @@
     "oxfmt": "0.65.0",
     "oxlint": "^1.80.0",
     "typescript": "7.0.2"
+  },
+  "patchedDependencies": {
+    "crossws@0.4.12": "patches/crossws@0.4.12.patch"
   }
 }
