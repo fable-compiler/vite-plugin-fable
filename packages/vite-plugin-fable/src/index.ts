@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { normalizePath, transformWithOxc } from "vite";
+import { createFilter, normalizePath, transformWithOxc } from "vite";
 import type {
   DevEnvironment,
   EnvironmentModuleNode,
@@ -394,6 +394,33 @@ export function createFablePlugin(
     return state.fsproj;
   }
 
+  /**
+   * Fast Refresh for `.fs` is `@vitejs/plugin-react`'s to give, and it only gives it to ids its
+   * `include` matches. Nothing breaks without it — editing a component reloads the page instead of
+   * updating in place — so it is easy to have never worked and never be noticed.
+   *
+   * The check is on `jsxRefreshInclude`, which plugin-react sets from `include` whether or not the
+   * React Compiler is on, rather than on whether refresh is currently enabled: that flag is also
+   * false during a build and whenever `compiler: true` hands refresh to `vite:react-compiler`.
+   */
+  function warnIfComponentsWillNotRefresh(resolvedConfig: ResolvedConfig): void {
+    if (state.isBuild || !state.config.jsx) return;
+    const oxc: ResolvedConfig["oxc"] = resolvedConfig.oxc;
+    // No `jsxRefreshInclude` means no plugin-react, and so no Fast Refresh to miss.
+    if (!oxc || oxc.jsxRefreshInclude === undefined) return;
+    const wouldRefresh: (id: string) => boolean = createFilter(
+      oxc.jsxRefreshInclude,
+      oxc.jsxRefreshExclude,
+    );
+    if (wouldRefresh(normalizePath(path.join(resolvedConfig.root, "Component.fs")))) return;
+    logWarn(
+      "configResolved",
+      "@vitejs/plugin-react will not apply Fast Refresh to .fs files, so editing an F# component " +
+        "reloads the page instead of updating in place. Add the extension to its filter: " +
+        "react({ include: /\\.fs$/ }).",
+    );
+  }
+
   /** Spawns the daemon and takes ownership of it until `buildEnd`. */
   function openDaemon(): void {
     logInfo("daemon", "Starting daemon");
@@ -475,6 +502,8 @@ export function createFablePlugin(
       } else {
         logInfo("configResolved", `Entry fsproj ${state.fsproj}`);
       }
+
+      warnIfComponentsWillNotRefresh(resolvedConfig);
     },
     // Vite awaits `buildStart` before `httpServer.listen` (`server/index.ts:1104`, reached from the
     // wrapped `listen` at `:1123`), so cracking there keeps the dev server off its port for the
@@ -532,16 +561,19 @@ export function createFablePlugin(
         const file: string = cleanUrl(id);
         let code: string | undefined = state.compilableFiles.get(file);
         if (code !== undefined) {
-          // If Fable outputted JSX, we still need to transform this.
-          // @vitejs/plugin-react does not do this.
+          // The plugin owns the JSX transform, and has to: Vite's own oxc pass forces
+          // `lang: "js"` for a non-JS extension (`plugins/oxc.ts:266-268`), so JSX inside a `.fs`
+          // id is a parse error there. `@vitejs/plugin-react` does not transform per file either.
+          //
+          // Refresh is deliberately left off. `vite:oxc` runs over this output afterwards and
+          // applies it (or `vite:react-compiler` does, when `react({ compiler: true })` is on);
+          // asking for it here as well registers every component twice.
           if (state.config.jsx) {
             const runtime: "automatic" | "classic" =
               state.config.jsx === "automatic" ? "automatic" : "classic";
-            const jsx: "preserve" | { runtime: "automatic" | "classic" } =
-              state.config.jsx === "preserve" ? "preserve" : { runtime };
             const oxcResult: { code: string } = await transformWithOxc(code, id, {
               lang: "jsx",
-              jsx,
+              jsx: { runtime },
             });
             code = oxcResult.code;
           }

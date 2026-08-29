@@ -2,7 +2,7 @@ import type { FableConfiguration, PluginOptions, ResolvedPluginOptions } from ".
 
 const defaults: ResolvedPluginOptions = { jsx: null, noReflection: false, exclude: [] };
 
-const jsxValues: ReadonlyArray<string> = ["automatic", "transform", "preserve"];
+const jsxValues: ReadonlyArray<string> = ["automatic", "transform"];
 const configurationValues: ReadonlyArray<string> = ["Debug", "Release"];
 
 /** Every key {@link PluginOptions} accepts, used to reject anything else. */
@@ -71,7 +71,16 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
   if (fsproj !== undefined && typeof fsproj !== "string") {
     fail(`"fsproj" must be a path, got ${typeof fsproj}.`);
   }
-  if (jsx !== undefined && jsx !== null && !jsxValues.includes(jsx)) {
+  // A JavaScript config can still pass it, and it used to be a documented value.
+  if ((jsx as string | null | undefined) === "preserve") {
+    // Every configuration of it fails, just at different points: Vite's oxc pass forces
+    // `lang: "js"` for a `.fs` id and the JSX becomes a parse error, and with that pass out of the
+    // way import analysis rejects the module for the same reason. Better to say so here.
+    fail(
+      `"jsx" cannot be "preserve": Vite cannot import a .fs module with JSX left in it. Use "automatic" or "transform".`,
+    );
+  }
+  if (jsx !== undefined && jsx !== null && !jsxValues.includes(jsx as string)) {
     fail(`"jsx" must be one of ${jsxValues.join(", ")} or null, got ${JSON.stringify(jsx)}.`);
   }
   if (noReflection !== undefined && typeof noReflection !== "boolean") {

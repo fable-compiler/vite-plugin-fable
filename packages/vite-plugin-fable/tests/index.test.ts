@@ -381,6 +381,86 @@ describe("buildStart", () => {
   });
 });
 
+describe("fast refresh", () => {
+  /** A resolved config carrying the `oxc` options `@vitejs/plugin-react` would have set. */
+  function configWithOxc(oxc: unknown, warnings: string[]): ResolvedConfig {
+    return resolvedConfig({
+      oxc,
+      logger: {
+        ...silentLogger,
+        warn: (message: string): void => {
+          warnings.push(message);
+        },
+      },
+    } as unknown as Partial<ResolvedConfig>);
+  }
+
+  /** What plugin-react sets when it is left on its defaults. */
+  const defaultRefreshInclude: RegExp[] = [/\.[tj]sx?(?:\?.*)?$/];
+
+  async function warningsFor(
+    pluginOptions: PluginOptions,
+    oxc: unknown,
+    config?: Partial<ResolvedConfig>,
+  ): Promise<string[]> {
+    const warnings: string[] = [];
+    const h: Harness = harness(pluginOptions);
+    const resolved: ResolvedConfig = configWithOxc(oxc, warnings);
+    await (h.plugin.configResolved as any).call({}, { ...resolved, ...config });
+    return warnings;
+  }
+
+  test("warns when plugin-react will not refresh .fs components", async () => {
+    // The failure is silent otherwise: the component still renders, it just reloads the page on
+    // every edit instead of updating in place.
+    const warnings: string[] = await warningsFor(
+      { jsx: "automatic" },
+      { jsx: { runtime: "automatic", refresh: true }, jsxRefreshInclude: defaultRefreshInclude },
+    );
+    expect(warnings.join("\n")).toContain("Fast Refresh");
+  });
+
+  test("stays quiet when .fs is in plugin-react's filter", async () => {
+    const warnings: string[] = await warningsFor(
+      { jsx: "automatic" },
+      { jsx: { runtime: "automatic", refresh: true }, jsxRefreshInclude: [/\.fs(?:\?.*)?$/] },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("stays quiet when the React Compiler owns refresh", async () => {
+    // `react({ compiler: true })` turns the global refresh flag off and applies refresh itself, so
+    // the flag says nothing. `jsxRefreshInclude` still reflects the user's `include`.
+    const warnings: string[] = await warningsFor(
+      { jsx: "automatic" },
+      { jsx: { runtime: "automatic", refresh: false }, jsxRefreshInclude: [/\.fs(?:\?.*)?$/] },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("stays quiet when plugin-react is not in use at all", async () => {
+    const warnings: string[] = await warningsFor({ jsx: "automatic" }, { jsx: "preserve" });
+    expect(warnings).toEqual([]);
+  });
+
+  test("stays quiet when the plugin emits no JSX", async () => {
+    const warnings: string[] = await warningsFor(
+      {},
+      { jsx: { runtime: "automatic", refresh: true }, jsxRefreshInclude: defaultRefreshInclude },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("stays quiet during a build, where there is no Fast Refresh", async () => {
+    const warnings: string[] = await warningsFor(
+      { jsx: "automatic" },
+      { jsx: { runtime: "automatic", refresh: true }, jsxRefreshInclude: defaultRefreshInclude },
+      { command: "build" as const },
+    );
+    expect(warnings).toEqual([]);
+  });
+});
+
 describe("transform", () => {
   test("serves the compiled output for a project file", async () => {
     const h: Harness = harness(

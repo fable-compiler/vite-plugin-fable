@@ -42,7 +42,15 @@ describe("resolveOptions", () => {
 
   test("rejects a jsx value it does not understand", () => {
     expect(() => resolveOptions({ jsx: "babel" } as unknown as PluginOptions)).toThrow(
-      /"jsx" must be one of automatic, transform, preserve or null/,
+      /"jsx" must be one of automatic, transform or null/,
+    );
+  });
+
+  test("rejects jsx: preserve, which cannot produce an importable module", () => {
+    // It used to be documented, and it fails late and confusingly: Vite's oxc pass turns the JSX
+    // left in a `.fs` id into a parse error, and without that pass import analysis rejects it.
+    expect(() => resolveOptions({ jsx: "preserve" } as unknown as PluginOptions)).toThrow(
+      /"jsx" cannot be "preserve"/,
     );
   });
 
