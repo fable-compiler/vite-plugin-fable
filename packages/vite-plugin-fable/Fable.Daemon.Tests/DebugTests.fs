@@ -477,3 +477,236 @@ module WireTests =
         let response = ProjectChangedResult.Error "Could not crack the project."
 
         Assert.That (normalize (serialize response), Is.EqualTo (normalize (File.ReadAllText (fixture "error.json"))))
+
+/// The debug server is what a tool that is not the plugin can ask what the daemon is doing. It
+/// serves the last published snapshot rather than asking the message loop, so these have to answer
+/// whether or not anything has been compiled, and without a compile running to answer them.
+module DebugServerTests =
+
+    open System.Net
+    open System.Net.Http
+    open System.Net.Sockets
+    open System.Text.Json
+    open System.Threading
+    open Microsoft.Extensions.Logging
+
+    /// A port nobody else holds, so the suite does not fight the 9014 a running dev server uses.
+    let private freePort () : uint16 =
+        use listener = new TcpListener (IPAddress.Loopback, 0)
+        listener.Start ()
+        let port = (listener.LocalEndpoint :?> IPEndPoint).Port
+        listener.Stop ()
+        uint16 port
+
+    let private sampleProjectDir =
+        Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../../sample-project")
+
+    let private mathFs = Path.CombineNormalize (sampleProjectDir, "Math.fs")
+    let private libraryFs = Path.CombineNormalize (sampleProjectDir, "Library.fs")
+
+    let private projectState : Debug.ProjectState =
+        {
+            Fsproj = Path.CombineNormalize (sampleProjectDir, "App.fsproj")
+            Configuration = "Debug"
+            FableLibrary = fableLibrary
+            Exclude = []
+            NoReflection = false
+            SourceFiles = [| mathFs ; libraryFs |]
+            DependentFiles = [| Path.CombineNormalize (sampleProjectDir, "App.fsproj") |]
+            TargetFramework = Some "net10.0"
+            OutputType = Some "Library"
+            CompilerArgs = [| "--define:FABLE_COMPILER" |]
+            ProjectReferences = [| "/nuget/FSharp.Core.dll" |]
+            Diagnostics =
+                [|
+                    {
+                        ErrorNumberText = "FS0025"
+                        Message = "Incomplete pattern matches on this expression."
+                        Range =
+                            {
+                                StartLine = 3
+                                StartColumn = 4
+                                EndLine = 3
+                                EndColumn = 9
+                            }
+                        Severity = "Warning"
+                        FileName = mathFs
+                    }
+                |]
+            CacheReused = false
+            CacheReason = "dependentFileHashMismatch"
+            CacheDetail = "/project/Directory.Build.props"
+            CacheFile = "/project/obj/App.vite-plugin-design-time"
+            FableModulesCacheFile = "/project/obj/App.vite-plugin-fable-modules"
+        }
+
+    /// Waits for Suave to finish binding: `startWebserver` hands back the server task, not the
+    /// promise that it is listening.
+    let private waitForServer (client : HttpClient) (baseUrl : string) : Task<unit> =
+        task {
+            let mutable attempts = 0
+            let mutable listening = false
+
+            while not listening && attempts < 100 do
+                try
+                    let! response = client.GetAsync $"{baseUrl}/api/status"
+                    listening <- response.IsSuccessStatusCode
+                with _ ->
+                    ()
+
+                if not listening then
+                    attempts <- attempts + 1
+                    do! Task.Delay 50
+        }
+
+    let private getJson (client : HttpClient) (url : string) : Task<JsonDocument> =
+        task {
+            let! body = client.GetStringAsync url
+            return JsonDocument.Parse body
+        }
+
+    /// One test for the whole lifecycle: the snapshot is process-wide, so what `/api/project`
+    /// answers before anything is cracked can only be asserted before something is.
+    [<Test>]
+    let ``the debug endpoints report what the daemon last did`` () =
+        task {
+            let port = freePort ()
+            let baseUrl = $"http://127.0.0.1:%i{port}"
+            use cts = new CancellationTokenSource ()
+            let logger = Debug.InMemoryLogger ()
+
+            // A daemon that was killed rather than shut down leaves its discovery file behind, so
+            // starting one sweeps the ones whose process is gone. The pid of a process that has
+            // actually exited, rather than a number assumed to be free: pid 0 is the kernel on
+            // macOS and reports itself alive.
+            let deadPid =
+                use finished = System.Diagnostics.Process.Start ("/bin/sh", "-c \"exit 0\"")
+
+                finished.WaitForExit ()
+                finished.Id
+
+            let discoveryFolder =
+                DirectoryInfo (Path.Combine (Path.GetTempPath (), "vite-plugin-fable"))
+
+            discoveryFolder.Create ()
+
+            let stale = Path.Combine (discoveryFolder.FullName, $"daemon-%i{deadPid}.json")
+
+            File.WriteAllText (stale, "{}")
+
+            Async.Start (Debug.startWebserver logger port cts.Token, cts.Token)
+
+            use client = new HttpClient ()
+            do! waitForServer client baseUrl
+
+            // Nothing has been cracked, and the endpoints still answer.
+            use! status = getJson client $"{baseUrl}/api/status"
+            Assert.That (status.RootElement.GetProperty("projectLoaded").GetBoolean(), Is.False)
+            Assert.That (status.RootElement.GetProperty("port").GetInt32(), Is.EqualTo (int port))
+
+            let! beforeCrack = client.GetAsync $"{baseUrl}/api/project"
+
+            Assert.That (
+                beforeCrack.StatusCode,
+                Is.EqualTo HttpStatusCode.Conflict,
+                "a project nobody cracked has to say so rather than answer with nothing"
+            )
+
+            Debug.publishProject projectState
+
+            use! project = getJson client $"{baseUrl}/api/project"
+            Assert.That (project.RootElement.GetProperty("sourceFiles").GetArrayLength(), Is.EqualTo 2)
+            Assert.That (project.RootElement.GetProperty("targetFramework").GetString(), Is.EqualTo "net10.0")
+            // Bulk that a caller has to ask for, so the default answer stays readable.
+            Assert.That (project.RootElement.GetProperty("compilerArgs").GetArrayLength(), Is.EqualTo 0)
+            Assert.That (project.RootElement.GetProperty("compilerArgCount").GetInt32(), Is.EqualTo 1)
+
+            use! withArgs = getJson client $"{baseUrl}/api/project?include=args,references"
+            Assert.That (withArgs.RootElement.GetProperty("compilerArgs").GetArrayLength(), Is.EqualTo 1)
+            Assert.That (withArgs.RootElement.GetProperty("projectReferences").GetArrayLength(), Is.EqualTo 1)
+
+            // Why the design time build ran is the thing that is only ever logged today.
+            use! cache = getJson client $"{baseUrl}/api/cache"
+            Assert.That (cache.RootElement.GetProperty("reused").GetBoolean(), Is.False)
+
+            Assert.That (cache.RootElement.GetProperty("reason").GetString(), Is.EqualTo "dependentFileHashMismatch")
+
+            use! diagnostics = getJson client $"{baseUrl}/api/diagnostics"
+            Assert.That (diagnostics.RootElement.GetProperty("warningCount").GetInt32(), Is.EqualTo 1)
+
+            use! errorsOnly = getJson client $"{baseUrl}/api/diagnostics?severity=error"
+            Assert.That (errorsOnly.RootElement.GetProperty("count").GetInt32(), Is.EqualTo 0)
+
+            // Before a compile the files are known but none of them has any JavaScript.
+            use! files = getJson client $"{baseUrl}/api/files"
+            Assert.That (files.RootElement.GetProperty("count").GetInt32(), Is.EqualTo 2)
+
+            Assert.That (files.RootElement.GetProperty("files").[0].GetProperty("compiled").GetBoolean(), Is.False)
+
+            Debug.publishInitialCompile (Map.ofList [ mathFs, "export const sum = 1;" ]) Set.empty
+
+            use! compiled = getJson client $"{baseUrl}/api/files?path=Math.fs"
+
+            Assert.That (
+                compiled.RootElement.GetProperty("javaScript").GetString(),
+                Is.EqualTo "export const sum = 1;",
+                "asking for one file by its project-relative path has to reach the same file"
+            )
+
+            use! withoutSource = getJson client $"{baseUrl}/api/files?path={mathFs}&source=false"
+
+            Assert.That (
+                withoutSource.RootElement.GetProperty("javaScript").ValueKind,
+                Is.EqualTo JsonValueKind.Null,
+                "a caller that only wants the summary should not be handed the whole module"
+            )
+
+            let! unknown = client.GetAsync $"{baseUrl}/api/files?path=NotInTheProject.fs"
+            Assert.That (unknown.StatusCode, Is.EqualTo HttpStatusCode.NotFound)
+
+            // The revision is how a caller tells whether it is looking at its own edit.
+            use! afterCompile = getJson client $"{baseUrl}/api/status"
+
+            Assert.That (
+                afterCompile.RootElement.GetProperty("revision").GetInt32(),
+                Is.GreaterThan 0,
+                "every published message has to move the revision"
+            )
+
+            Debug.recordRequest "fable/compile" mathFs 12.5 "success: 1 files"
+            use! requests = getJson client $"{baseUrl}/api/requests"
+            Assert.That (requests.RootElement.GetProperty("count").GetInt32(), Is.GreaterThan 0)
+
+            // A count alone passes just as happily when every entry serialises to `{}`, which is
+            // what an F# record hidden by the signature file does.
+            Assert.That (
+                requests.RootElement.GetProperty("requests").[0].GetProperty("method").GetString(),
+                Is.EqualTo "fable/compile"
+            )
+
+            Assert.That (
+                requests.RootElement.GetProperty("requests").[0].GetProperty("durationMs").GetDouble(),
+                Is.EqualTo 12.5
+            )
+
+            (logger :> ILogger).LogInformation "hello from the daemon"
+            use! logs = getJson client $"{baseUrl}/api/logs"
+            Assert.That (logs.RootElement.GetProperty("total").GetInt32(), Is.GreaterThan 0)
+
+            let nextSince = logs.RootElement.GetProperty("nextSince").GetInt32()
+            use! nothingNew = getJson client $"{baseUrl}/api/logs?since={nextSince}"
+
+            Assert.That (
+                nothingNew.RootElement.GetProperty("count").GetInt32(),
+                Is.EqualTo 0,
+                "resuming from nextSince has to return only what arrived after it"
+            )
+
+            Assert.That (
+                File.Exists stale,
+                Is.False,
+                "a discovery file for a process that no longer exists was left behind"
+            )
+
+            cts.Cancel ()
+        }

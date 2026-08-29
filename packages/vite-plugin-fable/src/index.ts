@@ -20,6 +20,7 @@ import type {
   BatchResult,
   CompileResult,
   DaemonLogger,
+  DaemonOptions,
   Diagnostic,
   FableDaemon,
   PluginOptions,
@@ -32,11 +33,11 @@ export type { FableConfiguration, PluginOptions } from "./types.js";
 
 const fsharpFileRegex = /\.(fs|fsx)$/;
 
-/** `VITE_PLUGIN_FABLE_DEBUG` also starts the daemon's log viewer, which the option does not. */
-const daemonLogViewerEnabled: boolean =
-  !!process.env.VITE_PLUGIN_FABLE_DEBUG &&
-  process.env.VITE_PLUGIN_FABLE_DEBUG !== "0" &&
-  process.env.VITE_PLUGIN_FABLE_DEBUG !== "false";
+/** Where the daemon's debug server listens, which `VITE_PLUGIN_FABLE_DEBUG_PORT` can move. */
+function debugServerUrl(): string {
+  const port: string = process.env.VITE_PLUGIN_FABLE_DEBUG_PORT || "9014";
+  return `http://127.0.0.1:${port}`;
+}
 
 /**
  * `Component.fs?raw` and `Component.fs?url` ask for the file, not the module it compiles to, and
@@ -67,7 +68,7 @@ export default function fablePlugin(userConfig?: PluginOptions): Plugin {
  */
 export function createFablePlugin(
   userConfig: PluginOptions | undefined,
-  createDaemon: (logger: DaemonLogger) => FableDaemon,
+  createDaemon: (logger: DaemonLogger, options: DaemonOptions) => FableDaemon,
 ): Plugin {
   const state: PluginState = {
     config: resolveOptions(userConfig),
@@ -510,14 +511,17 @@ export function createFablePlugin(
   /** Spawns the daemon and takes ownership of it until `buildEnd`. */
   function openDaemon(): void {
     logDebug("daemon", "starting");
-    // Only the env var starts the daemon's own viewer; the `debug` option is plugin-side only.
-    if (daemonLogViewerEnabled) {
-      logDebug("daemon", "log viewer at http://localhost:9014");
+    if (state.config.debug) {
+      const url: string = debugServerUrl();
+      logDebug("daemon", `log viewer at ${url}, JSON endpoints at ${url}/api`);
     }
-    state.daemon = createDaemon({
-      info: (message: string): void => logDebug("daemon", message),
-      error: (message: string): void => logError(`daemon: ${message}`),
-    });
+    state.daemon = createDaemon(
+      {
+        info: (message: string): void => logDebug("daemon", message),
+        error: (message: string): void => logError(`daemon: ${message}`),
+      },
+      { debug: state.config.debug },
+    );
     process.once("SIGINT", onSigint);
   }
 

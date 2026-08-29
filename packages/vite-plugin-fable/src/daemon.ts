@@ -7,6 +7,7 @@ import { decodeCompile, decodeInitialCompile, decodeProjectChanged } from "./wir
 import type {
   CompileResult,
   DaemonLogger,
+  DaemonOptions,
   FableDaemon,
   ProjectFileData,
   ProjectRequest,
@@ -30,12 +31,17 @@ function describeStartFailure(reason: string): string {
  * than awaiting a reply that will never arrive, so a missing .NET SDK surfaces as an error instead
  * of a hang. Call {@link FableDaemon.dispose} exactly once when finished.
  */
-export function startDaemon(logger: DaemonLogger): FableDaemon {
+export function startDaemon(logger: DaemonLogger, options: DaemonOptions): FableDaemon {
   const dotnetProcess: ChildProcessWithoutNullStreams = spawn(
     "dotnet",
     [daemonAssembly, "--stdio"],
     {
       stdio: "pipe",
+      // The daemon decides whether to start its debug server from this variable alone, so the
+      // `debug` plugin option reaches it by setting the variable the child sees.
+      env: options.debug
+        ? { ...process.env, VITE_PLUGIN_FABLE_DEBUG: "1" }
+        : { ...process.env, VITE_PLUGIN_FABLE_DEBUG: "" },
     },
   );
   const endpoint: JSONRPCEndpoint = new JSONRPCEndpoint(dotnetProcess.stdin, dotnetProcess.stdout);

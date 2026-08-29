@@ -211,6 +211,8 @@ let tryTypeCheckProject
 type CompiledProjectData =
     {
         CompiledFSharpFiles : Map<string, string>
+        /// The files answered from the `fable_modules` cache rather than compiled just now.
+        FromCache : Set<FullPath>
     }
 
 let private mapRange (m : FSharp.Compiler.Text.range) =
@@ -232,6 +234,52 @@ let private mapDiagnostics (ds : FSharpDiagnostic array) =
             FileName = d.FileName
         }
     )
+
+/// What the debug endpoints report about the last crack. Built here because this is where the
+/// cracker's own types are still in hand; `Debug` only ever sees plain data.
+let private describeProject
+    (resolver : CachedMSBuildCrackerResolver)
+    (payload : ProjectChangedPayload)
+    (result : TypeCheckedProjectData)
+    : Debug.ProjectState
+    =
+    let fsproj = Path.GetFullPath payload.Project
+
+    let reused, reason, detail =
+        match resolver.CacheDecision fsproj with
+        | Some (Ok ()) -> true, "", ""
+        | Some (Error invalid) ->
+            let name, detail = Caching.describeInvalidCacheReason invalid
+            false, name, detail
+        | None -> false, "unknown", "the resolver recorded no decision for this project"
+
+    let cacheKey = resolver.TryGetCacheKey fsproj
+
+    {
+        Fsproj = fsproj
+        Configuration = payload.Configuration
+        FableLibrary = payload.FableLibrary
+        Exclude = List.ofArray payload.Exclude
+        NoReflection = payload.NoReflection
+        SourceFiles = result.CrackerResponse.ProjectOptions.SourceFiles
+        DependentFiles = result.DependentFiles
+        TargetFramework = result.CrackerResponse.TargetFramework
+        OutputType = Some (string result.CrackerResponse.OutputType)
+        CompilerArgs = result.CrackerResponse.ProjectOptions.OtherOptions
+        ProjectReferences = List.toArray result.CrackerResponse.References
+        Diagnostics = mapDiagnostics result.TypeCheckProjectResult.ProjectCheckResults.Diagnostics
+        CacheReused = reused
+        CacheReason = reason
+        CacheDetail = detail
+        CacheFile =
+            cacheKey
+            |> Option.map (fun key -> key.CacheFile.FullName)
+            |> Option.defaultValue ""
+        FableModulesCacheFile =
+            cacheKey
+            |> Option.map (fun key -> key.FableModulesCacheFile.FullName)
+            |> Option.defaultValue ""
+    }
 
 let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<CompiledProjectData, string>> =
     async {
@@ -275,7 +323,12 @@ let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<Compiled
                 (initialCompileResponse.CompiledFiles, cachedFableModuleFiles)
                 ||> Map.fold (fun state key value -> Map.add key value state)
 
-            return Ok { CompiledFSharpFiles = compiledFiles }
+            return
+                Ok
+                    {
+                        CompiledFSharpFiles = compiledFiles
+                        FromCache = cachedFableModuleFiles.Keys |> Set.ofSeq
+                    }
         with ex ->
             logger.LogCritical ("tryCompileProject threw exception {ex}", ex)
             return Error ex.Message
@@ -428,7 +481,19 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     do
         match logger with
         | :? Debug.InMemoryLogger as logger ->
-            let server = Debug.startWebserver logger cts.Token
+            // A second dev server would collide on the default port, and Suave's bind failure is
+            // swallowed by `Async.Start`. `VITE_PLUGIN_FABLE_DEBUG_PORT` is how you give the second
+            // one a port of its own.
+            let port =
+                match Environment.GetEnvironmentVariable "VITE_PLUGIN_FABLE_DEBUG_PORT" with
+                | null
+                | "" -> Debug.defaultPort
+                | raw ->
+                    match UInt16.TryParse raw with
+                    | true, port -> port
+                    | _ -> Debug.defaultPort
+
+            let server = Debug.startWebserver logger port cts.Token
             Async.Start (server, cts.Token)
         | _ -> ()
 
@@ -461,6 +526,9 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                             )
                         )
 
+                        if Debug.isEnabled () then
+                            Debug.publishProject (describeProject model.Resolver payload result)
+
                         return
                             Some
                                 { model with
@@ -475,7 +543,9 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
 
                         match result with
                         | Error error -> replyChannel.Reply (FilesCompiledResult.Error error)
-                        | Ok result -> replyChannel.Reply (FilesCompiledResult.Success result.CompiledFSharpFiles)
+                        | Ok result ->
+                            replyChannel.Reply (FilesCompiledResult.Success result.CompiledFSharpFiles)
+                            Debug.publishInitialCompile result.CompiledFSharpFiles result.FromCache
 
                         return Some model
 
@@ -485,9 +555,9 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                         match result with
                         | Error error -> replyChannel.Reply (FileChangedResult.Error error)
                         | Ok result ->
-                            replyChannel.Reply (
-                                FileChangedResult.Success (result.CompiledFiles, mapDiagnostics result.Diagnostics)
-                            )
+                            let diagnostics = mapDiagnostics result.Diagnostics
+                            replyChannel.Reply (FileChangedResult.Success (result.CompiledFiles, diagnostics))
+                            Debug.publishFileCompile result.CompiledFiles diagnostics (Array.ofList fileNames)
 
                         return Some model
 
@@ -562,9 +632,20 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     member _.ProjectChanged (p : ProjectChangedPayload) : Task<ProjectChangedResult> =
         task {
             logger.LogDebug ("enter \"fable/project-changed\" {p}", p)
+            let sw = Stopwatch.StartNew ()
 
             let! response =
                 mailbox.PostAndAsyncReply (fun replyChannel -> Msg.ProjectChanged (p, replyChannel))
+
+            sw.Stop ()
+
+            Debug.recordRequest
+                "fable/project-changed"
+                p.Project
+                sw.Elapsed.TotalMilliseconds
+                (match response with
+                 | ProjectChangedResult.Success _ -> "success"
+                 | ProjectChangedResult.Error error -> $"error: %s{error}")
 
             logger.LogDebug ("exit \"fable/project-changed\" {response}", response)
             return response
@@ -574,7 +655,17 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     member _.InitialCompile () : Task<FilesCompiledResult> =
         task {
             logger.LogDebug "enter \"fable/initial-compile\""
+            let sw = Stopwatch.StartNew ()
             let! response = mailbox.PostAndAsyncReply Msg.CompileFullProject
+            sw.Stop ()
+
+            Debug.recordRequest
+                "fable/initial-compile"
+                ""
+                sw.Elapsed.TotalMilliseconds
+                (match response with
+                 | FilesCompiledResult.Success compiled -> $"success: %i{compiled.Count} files"
+                 | FilesCompiledResult.Error error -> $"error: %s{error}")
 
             let logResponse =
                 match response with
@@ -589,11 +680,22 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     member _.CompileFiles (p : CompileFilesPayload) : Task<FileChangedResult> =
         task {
             logger.LogDebug ("enter \"fable/compile\" with {p}", p)
+            let sw = Stopwatch.StartNew ()
 
             let! response =
                 mailbox.PostAndAsyncReply (fun replyChannel ->
                     Msg.CompileFiles (List.ofArray p.FileNames, replyChannel)
                 )
+
+            sw.Stop ()
+
+            Debug.recordRequest
+                "fable/compile"
+                (String.concat ", " p.FileNames)
+                sw.Elapsed.TotalMilliseconds
+                (match response with
+                 | FileChangedResult.Success (compiled, _) -> $"success: %i{compiled.Count} files"
+                 | FileChangedResult.Error error -> $"error: %s{error}")
 
             let logResponse =
                 match response with

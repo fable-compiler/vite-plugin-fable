@@ -2,7 +2,7 @@
 
 Nothing here is done. Items are deleted as they land, so what remains is open work, a question nobody has answered, or a decision recorded so it does not get re-litigated. Finished work belongs in `CHANGELOG.md`, not here. Each item has enough context to be picked up independently.
 
-Item 1 is blocked upstream and can only be tracked. Items 2-4 are projects, item 5 is a smaller one, item 6 records a rejected decision and item 7 is loose ends.
+Item 1 is blocked upstream and can only be tracked and item 2 is on hold. Items 3 and 4 are projects, item 5 is a smaller one, item 6 records a rejected decision and item 7 is loose ends.
 
 References into `~/Projects/Fable` are against Fable 5.14, the version in the workspace catalog.
 
@@ -14,21 +14,21 @@ Neither of these can be fixed in this repo. Both need an upstream change first.
   There is a local half waiting on it: `FilesCompiledResult.Success` carries no diagnostics, so `tryCompileProject` has nowhere to put them and `failBuildOnErrors` would never see them.
 - **Real F# source maps.** `FileWriter.AddSourceMapping` in `src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out, so `CliArgs.SourceMaps` does nothing. The plugin returns `{ mappings: '' }`, which is honest about having no mapping, but a real F#-to-JS one needs the Fable change first. Not filed.
 
-## 2. Replace the built-in debug server with a Vite DevTools panel
+## 2. A Vite DevTools panel (on hold)
 
-The daemon ships its own developer tool: `Debug.fs` runs a **Suave** web server on port 9014 with a WebSocket feed and a hand-written `debug/index.html`, gated behind `VITE_PLUGIN_FABLE_DEBUG`, so you can watch the daemon's in-memory log. It works, but it is a second HTTP server inside the compiler process, a bespoke UI to maintain, and a place users have to be told about separately from the tool they already have open.
+**On hold, not dropped.** A panel is still worth having; nothing below is being acted on until someone picks the investigation back up. What changed is that this is no longer a replacement for the built-in debug server, because that server now does something a panel cannot.
 
-[`@vitejs/devtools`](https://devtools.vite.dev/) is the ecosystem answer to the same problem, and it subsumes `vite-plugin-inspect` (it depends on `@devframes/plugin-inspect`). Moving the F# view into a panel there would put the information where people already look, next to the module graph and the per-plugin transform steps.
+The daemon ships its own developer tool: `Debug.fs` runs a **Suave** web server on port 9014, gated behind the `debug` plugin option or `VITE_PLUGIN_FABLE_DEBUG`. It serves two things. A WebSocket feed and a hand-written `debug/index.html` for watching the in-memory log, and JSON endpoints under `/api` reporting what the daemon cracked, compiled and cached, for anything that is not a pair of eyes. The second half is the reason this item shrank: a browser panel is worth nothing to a script, a terminal or an agent, and `docs/debug.md` and `CLAUDE.md` both point at `/api` now.
 
-**What it would delete**
+[`@vitejs/devtools`](https://devtools.vite.dev/) is the ecosystem answer to the human half, and it subsumes `vite-plugin-inspect` (it depends on `@devframes/plugin-inspect`). Moving the F# view into a panel there would put the information where people already look, next to the module graph and the per-plugin transform steps.
 
-- `Fable.Daemon/Debug.fs` and `Debug.fsi`, and `Fable.Daemon/debug/index.html`.
-- The `Suave` package reference — `Debug.fs` is its only consumer. (`protobuf-net` stays; `Caching.fs` uses it.)
-- `Fable.Daemon/debug` from the published `files`, and the `VITE_PLUGIN_FABLE_DEBUG` special case.
+**What it would delete**, which is now much less than it was
+
+Only `Fable.Daemon/debug/index.html` and the WebSocket feed that fills it. `Debug.fs`, `Debug.fsi`, the `Suave` reference and the `VITE_PLUGIN_FABLE_DEBUG` gate all stay, because the JSON endpoints are served from them. Deleting the HTML page alone does not pay for a bespoke UI, so a panel has to be worth building on its own terms.
 
 **What is worth surfacing**
 
-The plugin already receives all of this over JSON-RPC, so a panel could be fed from the JavaScript side without the daemon serving anything itself: the current `compilableFiles` map, the last set of diagnostics, cracking versus compile timings, which files each hot-update batch recompiled, and the design-time cache hit or miss with the reason.
+The plugin already receives some of this over JSON-RPC, so a panel could be fed from the JavaScript side: the current `compilableFiles` map, the last set of diagnostics, cracking versus compile timings, and which files each hot-update batch recompiled. The rest never crosses JSON-RPC — project options, the watched MSBuild inputs, the design-time cache hit or miss with its reason — so a panel wanting those reads the daemon's `/api` rather than duplicating the state.
 
 **How it actually runs**, which is not shaped like `vite-plugin-inspect`
 
@@ -42,7 +42,7 @@ Whether custom panels are supported at all. `@vitejs/devtools-kit` and `@vitejs/
 
 - [ ] Confirm whether custom panels are supported, and how, before building anything against an early-preview tool.
 - [ ] Track [devframes/devframe#317](https://github.com/devframes/devframe/issues/317); the embedded plugin needs it, the standalone CLI does not. Until it lands, a `crossws` bump needs the patch rebased.
-- [ ] If both clear, build the panel, then delete `Debug.fs`, the `debug/` folder and the Suave dependency.
+- [ ] If both clear, decide whether a panel earns its keep next to `/api`, and if so build it and delete `debug/index.html` and the WebSocket feed.
 
 ## 3. Plain F# modules always force a page reload
 
