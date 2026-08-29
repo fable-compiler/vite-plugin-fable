@@ -49,20 +49,16 @@ We can now start the Vite dev server:
 
 <vpf-command npm="npm run dev" bun="bunx --bun vite"></vpf-command>
 
-You should see a bunch of logs:
+The plugin keeps quiet and prints one line when it has compiled:
 
+```text
+  VITE v8.2.2  ready in 376 ms
+
+  ➜  Local:   http://localhost:5173/
+  12:32:44 PM [vite] [fable] compiled App.fsproj in 1.53s
 ```
-12:32:42 PM [vite] [fable]: configResolved: Configuration: Debug
-12:32:42 PM [vite] [fable]: configResolved: Entry fsproj /home/projects/your-project-folder/App.fsproj
-12:32:42 PM [vite] [fable]: buildStart: Starting daemon
-12:32:42 PM [vite] [fable]: buildStart: Initial project file change!
-12:32:42 PM [vite] [fable]: projectChanged: dependent file /home/projects/your-project-folder/App.fsproj changed.
-12:32:42 PM [vite] [fable]: compileProject: Full compile started of /home/projects/your-project-folder/App.fsproj
-12:32:42 PM [vite] [fable]: compileProject: fable-library located at /home/projects/your-project-folder/node_modules/@fable-org/fable-library-js
-12:32:42 PM [vite] [fable]: compileProject: about to type-checked /home/projects/your-project-folder/App.fsproj.
-12:32:44 PM [vite] [fable]: compileProject: /home/projects/your-project-folder/App.fsproj was type-checked.
-12:32:44 PM [vite] [fable]: compileProject: Full compile completed of /home/projects/your-project-folder/App.fsproj
-```
+
+If you need to see more than that, the [Debugging](./debug.md) page covers the `debug` option.
 
 And now we can import our code from F# in our `index.html`:
 

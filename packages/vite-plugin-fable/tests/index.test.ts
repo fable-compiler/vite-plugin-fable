@@ -82,8 +82,15 @@ interface Harness {
   transform(id: string): Promise<TransformOutput>;
   /** Whether rolldown would call the `transform` handler for this id at all. */
   transformFilterMatches(id: string): boolean;
-  /** Calls `hotUpdate` the way Vite's HMR pipeline does. */
-  hotUpdate(file: string, type?: "create" | "update" | "delete"): Promise<HotModule[] | void>;
+  /**
+   * Calls `hotUpdate` the way Vite's HMR pipeline does. Vite computes one `timestamp` per file
+   * change and then calls the hook once per environment with it, so tests can pass both.
+   */
+  hotUpdate(
+    file: string,
+    type?: "create" | "update" | "delete",
+    options?: { timestamp?: number; environment?: string },
+  ): Promise<HotModule[] | void>;
   /** Payloads the plugin pushed to the browser. */
   sent: unknown[];
   /** Modules the environment's graph will report per file. */
@@ -145,14 +152,15 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
     async hotUpdate(
       file: string,
       type: "create" | "update" | "delete" = "update",
+      options: { timestamp?: number; environment?: string } = {},
     ): Promise<HotModule[] | void> {
       const modules: HotModule[] = graph.has(file) ? [graph.get(file)!] : [];
       return (plugin.hotUpdate as any).call(
-        { environment },
+        { environment: { ...environment, name: options.environment ?? "client" } },
         {
           type,
           file,
-          timestamp: Date.now(),
+          timestamp: options.timestamp ?? Date.now(),
           modules,
           read: async (): Promise<string> => "",
           server: { environments: { client: environment } },
@@ -378,6 +386,39 @@ describe("buildStart", () => {
     const h: Harness = harness({}, { sourceFiles: [mathFs], projectDiagnostics: [warning] });
     await h.start(buildConfig());
     expect(h.daemon.initialCompileCalls).toBe(1);
+  });
+});
+
+describe("hotUpdate across environments", () => {
+  const project: StubDaemonOptions = {
+    sourceFiles: [mathFs],
+    compiled: { [mathFs]: "export const x = 1;" },
+  };
+
+  test("compiles once when Vite fans one change out to every environment", async () => {
+    // `handleHMRUpdate` takes a single timestamp per file change and then calls `hotUpdate` for
+    // every environment in `server.environments`. The calls arrive one after another, so the
+    // coalescing window cannot merge them — without deduplication a dev server with a `ssr`
+    // environment compiles every edit twice.
+    const h: Harness = harness({}, project);
+    await h.start();
+    const timestamp: number = Date.now();
+
+    await h.hotUpdate(mathFs, "update", { timestamp, environment: "client" });
+    await h.hotUpdate(mathFs, "update", { timestamp, environment: "ssr" });
+
+    expect(h.daemon.compileCalls).toHaveLength(1);
+  });
+
+  test("still compiles again for a genuinely new change", async () => {
+    const h: Harness = harness({}, project);
+    await h.start();
+    const first: number = Date.now();
+
+    await h.hotUpdate(mathFs, "update", { timestamp: first, environment: "client" });
+    await h.hotUpdate(mathFs, "update", { timestamp: first + 1, environment: "client" });
+
+    expect(h.daemon.compileCalls).toHaveLength(2);
   });
 });
 
