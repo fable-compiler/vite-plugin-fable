@@ -383,16 +383,33 @@ export function createFablePlugin(
    * server with the default `client` and `ssr` environments compiled every edit twice. Keying on
    * the timestamp Vite already computed makes one filesystem change mean one compile, while each
    * environment still resolves the resulting files against its own module graph.
+   *
+   * A map rather than a single entry, because fan-outs overlap. The watcher calls
+   * `onFileChange(file).catch(...)` without awaiting it (`server/index.ts:960-962`), so saving two
+   * files at once interleaves them, and one entry is overwritten before the first file's second
+   * environment asks for it. An entry cannot be dropped once its compile settles either: an
+   * environment only asks after the previous one's `hotUpdate` returned, which is already after
+   * the compile that one awaited.
    */
-  let sharedSourceChange: { key: string; result: Promise<BatchResult> } | null = null;
+  const sharedSourceChanges: Map<string, Promise<BatchResult>> = new Map();
+
+  /** Room for far more overlap than one fan-out can produce; this is a window, not a cache. */
+  const SHARED_SOURCE_CHANGE_LIMIT: number = 32;
 
   function queueSourceChangeOnce(file: string, timestamp: number): Promise<BatchResult> {
     const key = `${file}\u0000${timestamp}`;
-    if (sharedSourceChange?.key === key) return sharedSourceChange.result;
-    // One entry is enough: Vite finishes fanning a change out to every environment before the
-    // next change gets a timestamp.
+    const pending: Promise<BatchResult> | undefined = sharedSourceChanges.get(key);
+    if (pending) return pending;
     const result: Promise<BatchResult> = queueSourceChange(file);
-    sharedSourceChange = { key, result };
+    sharedSourceChanges.set(key, result);
+    // One insert can only put it one over, and a map iterates in insertion order, so this drops
+    // the oldest change still on record.
+    if (sharedSourceChanges.size > SHARED_SOURCE_CHANGE_LIMIT) {
+      for (const oldest of sharedSourceChanges.keys()) {
+        sharedSourceChanges.delete(oldest);
+        break;
+      }
+    }
     return result;
   }
 
