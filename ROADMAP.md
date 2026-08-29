@@ -8,6 +8,8 @@ Order is a rough suggestion: item 1 is what is left of the contract fixes, 4-9 a
 
 ## 1. Hook-contract fixes
 
+- **Fable's own errors never reach the plugin.** `CodeServices.compileMultipleFilesToJavaScript` fills `CompileResult.Diagnostics` from FCS's type-check results only, and discards the `CompilerImpl` holding `com.Logs` (`~/Projects/Fable/src/Fable.Compiler/Library.fs:223` upcasts it to the `Compiler` interface, where `Logs` does not exist). A file that type-checks but that Fable cannot translate therefore compiles to `return null` with no diagnostic at all: `vite build` prints nothing, exits 0, and the app breaks at runtime. Reproduced in `sample-project` with `Async.RunSynchronously`. Filed as [fable-compiler/Fable#4922](https://github.com/fable-compiler/Fable/issues/4922); `Fable.Cli` keeps the concrete type and reports the same logs, so this is specific to the library API.
+  Not fixable here. `compileFileToJs` and `BabelWriter` are not in `Library.fsi`, so the daemon cannot run its own compile loop to read the logs. When the upstream change lands there is a local half to do: `FilesCompiledResult.Success` carries no diagnostics, so `tryCompileProject` has nowhere to put them and `failBuildOnErrors` never sees them.
 - **Real F# source maps are blocked upstream.** `FileWriter.AddSourceMapping` in `~/Projects/Fable/src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out; `CliArgs.SourceMaps` exists but does nothing. Needs a Fable PR first.
   The plugin now returns `{ mappings: '' }`, which stops later stages from producing a map that labels the compiled JavaScript as the contents of a `.fs` file, but a real F#-to-JS mapping needs the Fable change first.
 
