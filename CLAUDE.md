@@ -37,6 +37,28 @@ but is injected client-side behind a `#devframe_otp=` fragment, so it is invisib
 the served HTML is byte-identical with and without it. Do not conclude DevTools is broken from
 HTTP probes; that mistake has already been made twice.
 
+## Asking the daemon what it is doing
+
+With `fable({ debug: true })` or `VITE_PLUGIN_FABLE_DEBUG=1`, the daemon serves JSON on
+`http://127.0.0.1:9014/api` (move it with `VITE_PLUGIN_FABLE_DEBUG_PORT`). `curl .../api` lists
+every endpoint. It is read-only and answers from a snapshot the message loop publishes, so it
+never blocks behind a compile and never changes what it is reporting on.
+
+Reach for it before reconstructing anything from the outside:
+
+- `/api/files?path=Greeting.fs` is the JavaScript Fable emitted for one file, without a build or
+  `.vite-inspect/`. `/api/files` lists them with sizes.
+- `/api/diagnostics` is unfiltered, so it still shows the `fable_modules` ones the plugin drops.
+- `/api/cache` says whether the design time build was reused and, if not, which input changed.
+- `/api/project` is the crack result: source files in compile order, watched MSBuild inputs,
+  `?include=args,references` for the compiler arguments.
+- `/api/requests` is the last 100 JSON-RPC calls with durations, `/api/logs` the daemon's log as
+  JSON with a `nextSince` cursor.
+
+Every response carries a `revision` that increments per served message, which is how you tell
+whether what you are reading already includes the edit you just made. A daemon you did not start
+announces itself in `$TMPDIR/vite-plugin-fable/daemon-<pid>.json`.
+
 ## Traps that have cost real time
 
 - **Vite's SPA fallback returns 200 with `index.html` for any unmatched path.** A status code

@@ -59,8 +59,11 @@ export interface PluginOptions {
    * Print what the plugin is doing: every hook it runs, every file it transforms, where it found
    * `fable-library`, and the daemon's own chatter.
    *
+   * It also starts the daemon's debug server on port 9014: the log viewer, and the JSON endpoints
+   * under `/api` that report what the daemon cracked, compiled and cached.
+   *
    * Off by default, where the plugin prints one line per compile plus diagnostics and errors.
-   * `VITE_PLUGIN_FABLE_DEBUG` turns it on too, and additionally starts the daemon's log viewer.
+   * `VITE_PLUGIN_FABLE_DEBUG` turns it on too.
    */
   debug?: boolean;
   /**
@@ -135,6 +138,17 @@ export interface ProjectFileData {
 export interface DaemonLogger {
   info(message: string): void;
   error(message: string): void;
+}
+
+/** How the daemon is started, as opposed to what it is asked to compile. */
+export interface DaemonOptions {
+  /**
+   * Start the daemon's own debug server: the log viewer and the JSON endpoints under `/api`.
+   *
+   * The daemon reads `VITE_PLUGIN_FABLE_DEBUG` itself, so this is passed as an environment
+   * variable to the child process rather than as an argument.
+   */
+  debug: boolean;
 }
 
 /** The payload of a `fable/project-changed` request. */

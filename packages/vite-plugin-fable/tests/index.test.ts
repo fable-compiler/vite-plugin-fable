@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { Logger, Plugin, ResolvedConfig } from "vite";
 import { createFablePlugin } from "../src/index.js";
 import { createStubDaemon, type StubDaemon, type StubDaemonOptions } from "./daemon.stub.js";
-import type { Diagnostic, PluginOptions, ProjectRequest } from "../src/types.js";
+import type { DaemonOptions, Diagnostic, PluginOptions, ProjectRequest } from "../src/types.js";
 
 const sampleProject: string = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -67,6 +67,8 @@ type LoadOutput = { code: string; map: { mappings: "" }; moduleType: "js" } | un
 interface Harness {
   plugin: Plugin;
   daemon: StubDaemon;
+  /** What the plugin asked for when it spawned the daemon, or null before `buildStart`. */
+  daemonOptions: { value: DaemonOptions | null };
   watched: string[];
   /**
    * Runs the startup hooks as Vite would, and waits for the first compile. In dev that wait is the
@@ -102,9 +104,13 @@ interface Harness {
 function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}): Harness {
   const daemon: StubDaemon = createStubDaemon(stub);
   const watched: string[] = [];
+  const daemonOptions: { value: DaemonOptions | null } = { value: null };
   const plugin: Plugin = createFablePlugin(
     { fsproj: appFsproj, ...pluginOptions },
-    (): StubDaemon => daemon,
+    (_logger: unknown, options: DaemonOptions): StubDaemon => {
+      daemonOptions.value = options;
+      return daemon;
+    },
   );
 
   const context: PluginContextStub = {
@@ -148,6 +154,7 @@ function harness(pluginOptions: PluginOptions = {}, stub: StubDaemonOptions = {}
   return {
     plugin,
     daemon,
+    daemonOptions,
     watched,
     sent,
     graph,
@@ -504,6 +511,32 @@ describe("hotUpdate across environments", () => {
     await h.hotUpdate(mathFs, "update", { timestamp: first + 1, environment: "client" });
 
     expect(h.daemon.compileCalls).toHaveLength(2);
+  });
+});
+
+describe("daemon debug server", () => {
+  const project: StubDaemonOptions = {
+    sourceFiles: [mathFs],
+    compiled: { [mathFs]: "export const x = 1;" },
+  };
+
+  test("stays off by default", async () => {
+    const h: Harness = harness({}, project);
+    await h.start();
+    expect(h.daemonOptions.value).toEqual({ debug: false });
+  });
+
+  test("starts when the debug option is on", async () => {
+    // The option used to be plugin-side only, so the daemon's own log viewer and its JSON
+    // endpoints could not be reached without also setting VITE_PLUGIN_FABLE_DEBUG.
+    const h: Harness = harness({ debug: true }, project);
+    await h.start();
+    expect(h.daemonOptions.value).toEqual({ debug: true });
+  });
+
+  test("says where to reach it", async () => {
+    const lines: string[] = await linesFrom({ debug: true }, project);
+    expect(lines.join("\n")).toContain("http://127.0.0.1:9014/api");
   });
 });
 

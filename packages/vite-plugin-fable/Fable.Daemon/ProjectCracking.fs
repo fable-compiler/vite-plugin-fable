@@ -14,6 +14,11 @@ type CachedMSBuildCrackerResolver(logger : ILogger) =
     let inner = MSBuildCrackerResolver () :> ProjectCrackerResolver
     let cached = ConcurrentDictionary<FullPath, Caching.CacheKey>()
 
+    /// What the last crack decided about each project's design time build cache. Only logged
+    /// before, which meant the answer to "why did that crack take 20 seconds" was thrown away.
+    let decisions =
+        ConcurrentDictionary<FullPath, Result<unit, Caching.InvalidCacheReason>>()
+
     let tryGetCacheKey (fsproj : FullPath) =
         match cached.TryGetValue fsproj with
         | true, cacheKey -> Some cacheKey
@@ -42,7 +47,19 @@ type CachedMSBuildCrackerResolver(logger : ILogger) =
     /// `Directory.Build.props` or an `<Import>` and the stale key compares the new project against
     /// the old one's inputs, finds nothing changed, and reuses a design time build that predates
     /// the file. The new file is also never reported to the plugin, so nothing watches it.
-    member x.ForgetCacheKeys () : unit = cached.Clear ()
+    member x.ForgetCacheKeys () : unit =
+        cached.Clear ()
+        decisions.Clear ()
+
+    /// The cache key the last crack built for this project, which names the files its MSBuild
+    /// evaluation depends on and where the cached design time build lives.
+    member x.TryGetCacheKey (fsproj : FullPath) : Caching.CacheKey option = tryGetCacheKey fsproj
+
+    /// Whether the last crack of this project reused its design time build cache, and if not, why.
+    member x.CacheDecision (fsproj : FullPath) : Result<unit, Caching.InvalidCacheReason> option =
+        match decisions.TryGetValue fsproj with
+        | true, decision -> Some decision
+        | false, _ -> None
 
     /// Get project files to watch inside the plugin
     /// These are the fsproj and potential MSBuild import files
@@ -79,7 +96,10 @@ type CachedMSBuildCrackerResolver(logger : ILogger) =
 
                 cached.[fsproj.FullName] <- currentCacheKey
 
-                match Caching.canReuseDesignTimeBuildCache currentCacheKey with
+                let decision = Caching.canReuseDesignTimeBuildCache currentCacheKey
+                decisions.[fsproj.FullName] <- Result.map ignore decision
+
+                match decision with
                 | Ok projectOptionsResponse ->
                     logger.LogInformation ("Design time build cache can be reused for {projectFile}", projectFile)
                     // The sweet spot, nothing changed and we can skip the design time build

@@ -4,8 +4,7 @@ const defaults: ResolvedPluginOptions = {
   jsx: null,
   noReflection: false,
   exclude: [],
-  // The env var is the switch you can flip without editing a config, and it also turns on
-  // the daemon's own log viewer.
+  // The env var is the switch you can flip without editing a config.
   debug: isTruthy(process.env.VITE_PLUGIN_FABLE_DEBUG),
   fableModulesDiagnostics: false,
 };

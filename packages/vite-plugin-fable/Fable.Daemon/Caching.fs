@@ -47,6 +47,27 @@ type InvalidCacheReason =
     | NoReflectionMismatch of cachedNoReflection : bool * currentNoReflection : bool
     | CacheFormatChanged of cachedVersion : int * currentVersion : int
 
+/// A stable name for why a design time build cache could not be reused, and the detail behind it.
+/// The name is what a tool matches on, so it stays put when the wording of the detail changes.
+let describeInvalidCacheReason (reason : InvalidCacheReason) : string * string =
+    match reason with
+    | InvalidCacheReason.FileDoesNotExist cacheFile -> "fileDoesNotExist", cacheFile.FullName
+    | InvalidCacheReason.CouldNotDeserialize error -> "couldNotDeserialize", error
+    | InvalidCacheReason.MainFsprojChanged -> "mainFsprojChanged", ""
+    | InvalidCacheReason.DefinesMismatch (cached, current) ->
+        "definesMismatch", $"""cached: %s{String.concat ", " cached}, current: %s{String.concat ", " current}"""
+    | InvalidCacheReason.DependentFileCountDoesNotMatch (cached, current) ->
+        "dependentFileCountDoesNotMatch", $"cached: %i{cached}, current: %i{current}"
+    | InvalidCacheReason.DependentFileHashMismatch file -> "dependentFileHashMismatch", file.FullName
+    | InvalidCacheReason.FableCompilerVersionMismatch (cached, current) ->
+        "fableCompilerVersionMismatch", $"cached: %s{cached}, current: %s{current}"
+    | InvalidCacheReason.ExcludeMismatch (cached, current) ->
+        "excludeMismatch", $"""cached: %s{String.concat ", " cached}, current: %s{String.concat ", " current}"""
+    | InvalidCacheReason.NoReflectionMismatch (cached, current) ->
+        "noReflectionMismatch", $"cached: %b{cached}, current: %b{current}"
+    | InvalidCacheReason.CacheFormatChanged (cached, current) ->
+        "cacheFormatChanged", $"cached: %i{cached}, current: %i{current}"
+
 /// Contains all the info that determines the cache design time build value.
 /// This is not the cached information!
 type CacheKey =
