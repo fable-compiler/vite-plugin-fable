@@ -18,6 +18,7 @@
     "build": "bun run build:daemon && bun run build:plugin",
     "build:daemon": "bun run --cwd packages/vite-plugin-fable build:daemon",
     "build:plugin": "bun run --cwd packages/vite-plugin-fable build",
+    "ci": "bun run --no-exit-on-error --parallel lint fmt test",
     "fmt": "oxfmt && dotnet fantomas .",
     "fmt:check": "oxfmt --check && dotnet fantomas check .",
     "lint": "oxlint --deny-warnings && bun run lint:types",

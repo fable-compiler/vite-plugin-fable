@@ -185,11 +185,13 @@ export function createFablePlugin(
     }
     const compiledFSharpFiles: Record<string, string> = await requireDaemon().initialCompile();
     logInfo("compileProject", `Full compile completed of ${state.fsproj}`);
-    state.sourceFiles.forEach((file: string) => {
-      addWatchFile(file);
-      const normalizedFileName: string = normalizePath(file);
-      state.compilableFiles.set(normalizedFileName, compiledFSharpFiles[file]);
-    });
+    state.sourceFiles.forEach((file: string): void => addWatchFile(file));
+    // Key off what the daemon returned rather than looking each source file up in it: the two sets
+    // differ (signature files are never compiled), and indexing a raw-keyed map with an
+    // already-normalised path silently yields `undefined` for every entry.
+    for (const [file, javaScript] of Object.entries(compiledFSharpFiles)) {
+      state.compilableFiles.set(normalizePath(file), javaScript);
+    }
   }
 
   /**
@@ -476,8 +478,10 @@ export function createFablePlugin(
             code = oxcResult.code;
           }
           return {
-            code: code,
-            map: null,
+            code,
+            // Not `null`, which would claim the previous mapping still holds: this replaced F#
+            // with JavaScript. `{ mappings: "" }` is how Vite's own plugins say a map was lost.
+            map: { mappings: "" as const },
           };
         } else if (state.isBuild) {
           // Returning nothing would let Vite parse the F# source as JavaScript, and the user would
