@@ -13,7 +13,7 @@ The F# daemon sets up a JSON-RPC server using the `StreamJsonRpc` library. The s
 ## Methods
 
 ### 1. `fable/project-changed`
-- **Purpose**: Handles project configuration and changes via [Project Cracking](./CoolCatCracking.fs) to analyze and **extract metadata** from `.fsproj` files.
+- **Purpose**: Handles project configuration and changes via [Project Cracking](./ProjectCracking.fs) to analyze and **extract metadata** from `.fsproj` files.
 - **Input**: Project configuration payload.
 - **Output**: Source files, diagnostics, and dependent files.
 

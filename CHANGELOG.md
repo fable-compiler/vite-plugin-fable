@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
+## [Unreleased]
+### Changed
+- Fable.Daemon now targets `net10.0`; the .NET 10 runtime is required.
+- Updated Fable.Compiler to 5.14.1 and `@fable-org/fable-library-js` to 2.5.1.
+- Project cracking now delegates to Fable's own `MSBuildCrackerResolver`. The design time build cache and watched MSBuild files are kept in `ProjectCracking.fs`; `CoolCatCracking.fs` was removed.
+- `cracking.fsx` is executable and accepts an fsproj path: `./cracking.fsx path/to/Project.fsproj`.
+- MSBuild output is decoded with `System.Text.Json`; the `Thoth.Json.*` dependencies were removed.
+- Sample project targets `net10.0`.
+- GitHub Actions updated to their latest major versions and the workflows read the SDK version from `global.json`.
+
+### Fixed
+- `dotnet msbuild` invocations for the cache key no longer give up after 5 seconds and now fail on a non-zero exit code.
+
 ## [0.2.1] - 2025-10-23
 ### Changed
 - Removed caret range from ts-lsp-client to use version 1.0.4, pr ([#59](https://github.com/fable-compiler/vite-plugin-fable/pull/59)), targets issue ([#58](https://github.com/fable-compiler/vite-plugin-fable/issues/58))

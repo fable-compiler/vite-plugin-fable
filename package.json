@@ -30,7 +30,7 @@
   "fundinding": "https://nojaf.com/",
   "dependencies": {
     "@babel/code-frame": "^7.26.2",
-    "@fable-org/fable-library-js": "2.0.0-beta.3",
+    "@fable-org/fable-library-js": "2.5.1",
     "promise.withresolvers": "^1.0.3",
     "rxjs": "^7.8.1",
     "ts-lsp-client": "1.0.4"

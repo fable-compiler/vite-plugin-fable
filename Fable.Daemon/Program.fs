@@ -34,7 +34,7 @@ type CrackerInput =
 
 type Model =
     {
-        CoolCatResolver : CoolCatResolver
+        Resolver : CachedMSBuildCrackerResolver
         Checker : InteractiveChecker
         CrackerInput : CrackerInput option
         CrackerResponse : CrackerResponse
@@ -94,8 +94,10 @@ let tryTypeCheckProject
                         PrintAst = false
                         FableLibraryPath = Some payload.FableLibrary
                         Configuration = payload.Configuration
-                        NoRestore = true
+                        // Fable's MSBuildCrackerResolver only adds `/restore` to the design time build when this is false.
+                        NoRestore = false
                         NoCache = true
+                        NoGitignore = true
                         NoParallelTypeCheck = false
                         SourceMaps = false
                         SourceMapsRoot = None
@@ -121,7 +123,8 @@ let tryTypeCheckProject
 
                 cliArgs, CrackerOptions (cliArgs, true)
 
-            let crackerResponse = getFullProjectOpts model.CoolCatResolver crackerOptions
+            let crackerResponse = getFullProjectOpts model.Resolver crackerOptions
+
             logger.LogDebug ("CrackerResponse: {crackerResponse}", crackerResponse)
             let checker = InteractiveChecker.Create crackerResponse.ProjectOptions
 
@@ -137,7 +140,7 @@ let tryTypeCheckProject
             logger.LogDebug ("Typechecking {projectFile} took {elapsed}", projectFile, typeCheckTime)
 
             let dependentFiles =
-                model.CoolCatResolver.MSBuildProjectFiles projectFile
+                model.Resolver.MSBuildProjectFiles projectFile
                 |> List.map (fun fi -> fi.FullName)
                 |> List.toArray
 
@@ -191,7 +194,7 @@ let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<Compiled
     async {
         try
             let cachedFableModuleFiles =
-                model.CoolCatResolver.TryGetCachedFableModuleFiles model.CrackerResponse.ProjectOptions.ProjectFileName
+                model.Resolver.TryGetCachedFableModuleFiles model.CrackerResponse.ProjectOptions.ProjectFileName
 
             let files =
                 let cachedFiles = cachedFableModuleFiles.Keys |> Set.ofSeq
@@ -221,7 +224,7 @@ let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<Compiled
                     initialCompileResponse.CompiledFiles
                     |> Map.filter (fun key _value -> key.Contains "fable_modules")
 
-                model.CoolCatResolver.WriteCachedFableModuleFiles
+                model.Resolver.WriteCachedFableModuleFiles
                     model.CrackerResponse.ProjectOptions.ProjectFileName
                     fableModuleFiles
 
@@ -434,7 +437,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
 
             loop
                 {
-                    CoolCatResolver = CoolCatResolver logger
+                    Resolver = CachedMSBuildCrackerResolver logger
                     Checker = Unchecked.defaultof<InteractiveChecker>
                     CrackerResponse = Unchecked.defaultof<CrackerResponse>
                     SourceReader = Unchecked.defaultof<SourceReader>

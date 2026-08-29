@@ -4,9 +4,8 @@ open System
 open System.IO
 open System.Reflection
 open System.Runtime.InteropServices
+open System.Text.Json
 open Microsoft.Extensions.Logging
-open Thoth.Json.Core
-open Thoth.Json.System.Text.Json
 open ProtoBuf
 open Fable.Compiler.ProjectCracker
 
@@ -179,12 +178,16 @@ let canReuseDesignTimeBuildCache (cacheKey : CacheKey) : Result<ProjectOptionsRe
     with ex ->
         Error (InvalidCacheReason.CouldNotDeserialize ex.Message)
 
-let private cacheKeyDecoder (options : CrackerOptions) (fsproj : FileInfo) : Decoder<CacheKey> =
-    Decode.object (fun get ->
-        let paths =
-            let value = get.Required.At [ "Properties" ; "MSBuildAllProjects" ] Decode.string
+let private decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json : string) : Result<CacheKey, string> =
+    try
+        use document = JsonDocument.Parse json
+        let properties = document.RootElement.GetProperty "Properties"
 
-            value.Split (';', StringSplitOptions.RemoveEmptyEntries)
+        let getProperty (name : string) =
+            properties.GetProperty(name).GetString ()
+
+        let paths =
+            (getProperty "MSBuildAllProjects").Split (';', StringSplitOptions.RemoveEmptyEntries)
             |> Array.choose (fun path ->
                 let fi = FileInfo path
 
@@ -194,14 +197,13 @@ let private cacheKeyDecoder (options : CrackerOptions) (fsproj : FileInfo) : Dec
         // if `UseArtifactsOutput=true` then the IntermediateOutputPath the path is absolute "C:\Users\nojaf\Projects\telplin\artifacts\obj\OnlineTool\debug"
         // else it is something like "obj\\Release/net7.0/", on Linux slashes can be mixed 🙃
         let intermediateOutputPath =
-            let v = get.Required.At [ "Properties" ; "IntermediateOutputPath" ] Decode.string
+            let v = getProperty "IntermediateOutputPath"
             let v = if isWindows then v else v.Replace ('\\', '/')
             let v = v.TrimEnd [| '\\' ; '/' |]
             Path.Combine (fsproj.DirectoryName, v) |> Path.GetFullPath
 
         // Full path of the folder that contains the `g.props` file.
-        let msbuildProjectExtensionsPath =
-            get.Required.At [ "Properties" ; "MSBuildProjectExtensionsPath" ] Decode.string
+        let msbuildProjectExtensionsPath = getProperty "MSBuildProjectExtensionsPath"
 
         let nugetGProps =
             let gPropFile =
@@ -217,15 +219,17 @@ let private cacheKeyDecoder (options : CrackerOptions) (fsproj : FileInfo) : Dec
             [ yield fsproj ; yield! paths ; yield! nugetGProps ]
             |> List.distinctBy (fun fi -> fi.FullName)
 
-        {
-            MainFsproj = fsproj
-            CacheFile = cacheFile
-            DependentFiles = dependentFiles
-            Defines = Set.ofList options.FableOptions.Define
-            Configuration = options.Configuration
-            FableCompilerVersion = fableCompilerVersion
-        }
-    )
+        Ok
+            {
+                MainFsproj = fsproj
+                CacheFile = cacheFile
+                DependentFiles = dependentFiles
+                Defines = Set.ofList options.FableOptions.Define
+                Configuration = options.Configuration
+                FableCompilerVersion = fableCompilerVersion
+            }
+    with ex ->
+        Error $"Could not decode MSBuild output:\n%s{json}\n%s{ex.Message}"
 
 /// Generate the caching key information for the design time build of the incoming fsproj file.
 let mkProjectCacheKey
@@ -249,7 +253,7 @@ let mkProjectCacheKey
                 fsproj
                 $"/p:Configuration=%s{options.Configuration} --getProperty:MSBuildAllProjects --getProperty:IntermediateOutputPath --getProperty:MSBuildProjectExtensionsPath"
 
-        return Decode.fromString (cacheKeyDecoder options fsproj) json
+        return decodeCacheKey options fsproj json
     }
 
 [<ProtoContract>]

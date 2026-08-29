@@ -1,11 +1,12 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "vite-plugin-fable",
       "dependencies": {
         "@babel/code-frame": "^7.26.2",
-        "@fable-org/fable-library-js": "2.0.0-beta.3",
+        "@fable-org/fable-library-js": "2.5.1",
         "promise.withresolvers": "^1.0.3",
         "rxjs": "^7.8.1",
         "ts-lsp-client": "1.0.4",
@@ -83,7 +84,7 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.24.0", "", { "os": "win32", "cpu": "x64" }, "sha512-7IAFPrjSQIJrGsK6flwg7NFmwBoSTyF3rl7If0hNUFQU4ilTsEPL6GuMuU9BfIWVVGuRnuIidkSMC+c0Otu8IA=="],
 
-    "@fable-org/fable-library-js": ["@fable-org/fable-library-js@2.0.0-beta.3", "", {}, "sha512-gUXVwkAYMM4vbOk1iySv4smE1SzYaXJQ4hieqNVmN/6ojpafjprLt5gupHdlkwcMZriXX+F32Rzn8oNfJicQ5Q=="],
+    "@fable-org/fable-library-js": ["@fable-org/fable-library-js@2.5.1", "", {}, "sha512-dU9ehFhU9WgQQf0R8+NwfC6JMVy/TUOoFfMCkjEkD8VFa9LMCJzdzfz/1TIPi4L39s/Iqo71QfWPeCU3U7h1jA=="],
 
     "@hapi/bourne": ["@hapi/bourne@2.1.0", "", {}, "sha512-i1BpaNDVLJdRBEKeJWkVO6tYX6DMFBuwMhSuWqLsY4ufeTKGVuV5rBsUhxPayXqnnWHgXUAmWK16H/ykO5Wj4Q=="],
 
