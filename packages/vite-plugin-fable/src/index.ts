@@ -83,7 +83,7 @@ export function createFablePlugin(
   }
 
   function logError(prefix: string, message: string): void {
-    state.logger.warn(colors.red(`[fable] ${prefix}: ${message}`), {
+    state.logger.error(colors.red(`[fable] ${prefix}: ${message}`), {
       timestamp: true,
     });
   }
@@ -151,6 +151,21 @@ export function createFablePlugin(
   }
 
   /**
+   * During `vite build` an F# error has to stop the build; exiting 0 with broken output is worse
+   * than failing loudly. In dev the server stays up so the browser overlay can show the diagnostic.
+   */
+  function failBuildOnErrors(diagnostics: Diagnostic[]): void {
+    if (!state.isBuild) return;
+    const errors: Diagnostic[] = diagnostics.filter(
+      (diagnostic: Diagnostic): boolean => diagnostic.severity.toLowerCase() === "error",
+    );
+    if (errors.length === 0) return;
+    throw new Error(
+      `F# compilation failed with ${errors.length} error(s):\n${errors.map(formatDiagnostic).join("\n")}`,
+    );
+  }
+
+  /**
    * Does a type-check and compilation of the state.fsproj
    */
   async function compileProject(addWatchFile: (id: string) => void): Promise<void> {
@@ -161,6 +176,7 @@ export function createFablePlugin(
     const projectResponse: ProjectFileData = await getProjectFile(fableLibrary);
     logInfo("compileProject", `${state.fsproj} was type-checked.`);
     logDiagnostics(projectResponse.diagnostics);
+    failBuildOnErrors(projectResponse.diagnostics);
     for (const sf of projectResponse.sourceFiles) {
       state.sourceFiles.add(normalizePath(sf));
     }
@@ -196,6 +212,8 @@ export function createFablePlugin(
         "projectChanged",
         `Unexpected failure during projectChanged for ${Array.from(projectFiles)},\n${e}`,
       );
+      // A dev server keeps running so the next edit can fix it; a build must not exit 0.
+      if (state.isBuild) throw e;
     }
   }
 
@@ -367,6 +385,7 @@ export function createFablePlugin(
         }
       } catch (e) {
         logCritical("buildStart", `Unexpected failure during buildStart: ${e}`);
+        if (state.isBuild) throw e;
       }
     },
     transform: {
@@ -392,6 +411,10 @@ export function createFablePlugin(
             code: code,
             map: null,
           };
+        } else if (state.isBuild) {
+          // Returning nothing would let Vite parse the F# source as JavaScript, and the user would
+          // get a syntax error pointing at `module Foo` instead of the real cause.
+          this.error(`${id} was not compiled by Fable, so it cannot be bundled.`);
         } else {
           logWarn("transform", `${id} is not part of compilableFiles.`);
         }
