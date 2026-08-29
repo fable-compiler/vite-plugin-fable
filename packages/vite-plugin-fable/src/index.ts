@@ -18,6 +18,7 @@ import { startDaemon } from "./daemon.js";
 import { resolveOptions } from "./options.js";
 import type {
   BatchResult,
+  CompileResult,
   DaemonLogger,
   Diagnostic,
   FableDaemon,
@@ -168,6 +169,27 @@ export function createFablePlugin(
     return `${diagnostic.severity.toUpperCase()} ${diagnostic.errorNumberText}: ${diagnostic.message} ${diagnostic.fileName} (${diagnostic.range.startLine},${diagnostic.range.startColumn}) (${diagnostic.range.endLine},${diagnostic.range.endColumn})`;
   }
 
+  /** `fable_modules` is where Fable restores the sources of the packages a project depends on. */
+  function isInFableModules(fileName: string): boolean {
+    return normalizePath(fileName).split("/").includes("fable_modules");
+  }
+
+  /**
+   * The diagnostics worth putting in front of the user. A diagnostic on a file under
+   * `fable_modules` is about a package's own source, which nobody here wrote and nobody here can
+   * edit, so it is dropped unless `fableModulesDiagnostics` asks for it.
+   *
+   * That includes errors: with the option off, a package that fails to compile takes the build's
+   * only signal with it, and `vite build` exits 0 having emitted nothing for that file. Turn the
+   * option on when a package is what looks broken.
+   */
+  function reportableDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
+    if (state.config.fableModulesDiagnostics) return diagnostics;
+    return diagnostics.filter(
+      (diagnostic: Diagnostic): boolean => !isInFableModules(diagnostic.fileName),
+    );
+  }
+
   function logDiagnostics(diagnostics: Diagnostic[]): void {
     for (const diagnostic of diagnostics) {
       switch (diagnostic.severity.toLowerCase()) {
@@ -209,8 +231,9 @@ export function createFablePlugin(
     logDebug("compileProject", `fable-library at ${short(fableLibrary)}`);
     const projectResponse: ProjectFileData = await getProjectFile(fableLibrary);
     logDebug("compileProject", `type-checked in ${since(started)}`);
-    logDiagnostics(projectResponse.diagnostics);
-    failBuildOnErrors(projectResponse.diagnostics);
+    const projectDiagnostics: Diagnostic[] = reportableDiagnostics(projectResponse.diagnostics);
+    logDiagnostics(projectDiagnostics);
+    failBuildOnErrors(projectDiagnostics);
     for (const sf of projectResponse.sourceFiles) {
       state.sourceFiles.add(normalizePath(sf));
     }
@@ -258,7 +281,9 @@ export function createFablePlugin(
   async function fsharpFileChanged(files: string[]): Promise<BatchResult> {
     const started: number = performance.now();
     try {
-      const { compiledFiles, diagnostics } = await requireDaemon().compile(files);
+      const compileResult: CompileResult = await requireDaemon().compile(files);
+      const compiledFiles: Record<string, string> = compileResult.compiledFiles;
+      const diagnostics: Diagnostic[] = reportableDiagnostics(compileResult.diagnostics);
 
       logDebug("fsharpFileChanged", Object.keys(compiledFiles).map(short).join(", "));
 
