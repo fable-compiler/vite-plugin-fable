@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { JSONRPCEndpoint } from "ts-lsp-client";
@@ -10,10 +11,10 @@ import type {
   ProjectRequest,
 } from "./types.js";
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const currentDir: string = path.dirname(fileURLToPath(import.meta.url));
 
 // The plugin is emitted to `dist/`, the daemon is published to `bin/` at the package root.
-const daemonAssembly = path.join(currentDir, "..", "bin", "Fable.Daemon.dll");
+const daemonAssembly: string = path.join(currentDir, "..", "bin", "Fable.Daemon.dll");
 
 /**
  * A discriminated union case as it arrives over JSON-RPC. The wire format is positional: `fields`
@@ -38,13 +39,19 @@ function describeFailure(reason: string): string {
  * of a hang. Call {@link FableDaemon.dispose} exactly once when finished.
  */
 export function startDaemon(logger: DaemonLogger): FableDaemon {
-  const dotnetProcess = spawn("dotnet", [daemonAssembly, "--stdio"], { stdio: "pipe" });
-  const endpoint = new JSONRPCEndpoint(dotnetProcess.stdin, dotnetProcess.stdout);
+  const dotnetProcess: ChildProcessWithoutNullStreams = spawn(
+    "dotnet",
+    [daemonAssembly, "--stdio"],
+    {
+      stdio: "pipe",
+    },
+  );
+  const endpoint: JSONRPCEndpoint = new JSONRPCEndpoint(dotnetProcess.stdin, dotnetProcess.stdout);
   let disposed = false;
 
   // stderr is piped, so it has to be drained: once the pipe buffer fills the daemon blocks on write.
   dotnetProcess.stderr.on("data", (data: Buffer) => {
-    const message = data.toString().trimEnd();
+    const message: string = data.toString().trimEnd();
     if (message) {
       logger.error(message);
     }
@@ -54,16 +61,18 @@ export function startDaemon(logger: DaemonLogger): FableDaemon {
    * Rejects once the daemon fails to start or exits unexpectedly. Raced against every request so a
    * dead daemon surfaces an error instead of leaving the caller awaiting a reply that never comes.
    */
-  const failed = new Promise<never>((_resolve, reject) => {
-    dotnetProcess.once("error", (error) => {
-      reject(new Error(describeFailure(`Could not spawn \`dotnet\`: ${error.message}`)));
-    });
-    dotnetProcess.once("exit", (code, signal) => {
-      if (disposed) return;
-      const how = signal ? `signal ${signal}` : `exit code ${code}`;
-      reject(new Error(describeFailure(`The Fable daemon stopped unexpectedly (${how}).`)));
-    });
-  });
+  const failed: Promise<never> = new Promise<never>(
+    (_resolve: unknown, reject: (reason: Error) => void) => {
+      dotnetProcess.once("error", (error: Error) => {
+        reject(new Error(describeFailure(`Could not spawn \`dotnet\`: ${error.message}`)));
+      });
+      dotnetProcess.once("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+        if (disposed) return;
+        const how: string = signal ? `signal ${signal}` : `exit code ${code}`;
+        reject(new Error(describeFailure(`The Fable daemon stopped unexpectedly (${how}).`)));
+      });
+    },
+  );
   // Nothing awaits this until it is raced, so keep Node from flagging an unhandled rejection.
   failed.catch(() => {});
 
@@ -87,17 +96,17 @@ export function startDaemon(logger: DaemonLogger): FableDaemon {
 
   return {
     async projectChanged(request: ProjectRequest): Promise<ProjectFileData> {
-      const fields = unwrap(await send("fable/project-changed", request));
+      const fields: any[] = unwrap(await send("fable/project-changed", request));
       return { sourceFiles: fields[0], diagnostics: fields[1], dependentFiles: fields[2] };
     },
 
     async initialCompile(): Promise<Record<string, string>> {
-      const fields = unwrap(await send("fable/initial-compile"));
+      const fields: any[] = unwrap(await send("fable/initial-compile"));
       return fields[0];
     },
 
     async compile(files: string[]): Promise<CompileResult> {
-      const result = await send("fable/compile", { fileNames: files });
+      const result: FSharpDiscriminatedUnion = await send("fable/compile", { fileNames: files });
       if (result.case !== "Success" || !result.fields || result.fields.length === 0) {
         throw new Error(result.fields?.[0] || "Unknown error occurred");
       }

@@ -27,8 +27,9 @@
     "build:daemon": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./bin",
     "test": "bun test",
     "postinstall": "bun run build:daemon",
-    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.docs.json",
-    "prepublishOnly": "cp ../../Directory.Build.props ../../Directory.Packages.props . && bun run build && bun ../../scripts/changelog-updater.js"
+    "lint": "oxlint && bun run lint:types",
+    "lint:types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.docs.json",
+    "prepublishOnly": "cp ../../Directory.Build.props ../../Directory.Packages.props . && bun run build && bun ../../scripts/changelog-updater.ts"
   },
   "dependencies": {
     "@babel/code-frame": "^8.0.0",
