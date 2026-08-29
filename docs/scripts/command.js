@@ -133,11 +133,7 @@ class Command extends LitElement {
     const copyElement = this._clicked
       ? html`<div>
           copied!
-          <iconify-icon
-            icon="system-uicons:clipboard-check"
-            width="24"
-            height="24"
-          ></iconify-icon>
+          <iconify-icon icon="system-uicons:clipboard-check" width="24" height="24"></iconify-icon>
         </div>`
       : html`<iconify-icon
           icon="system-uicons:clipboard"
@@ -153,21 +149,14 @@ class Command extends LitElement {
         <ul>
           ${attributes.map((a, i) => {
             const className = i === activeIndex ? "active" : "";
-            return html`<li
-              class="${className}"
-              @click=${() => this.onOptionClick(a.name)}
-            >
+            return html`<li class="${className}" @click=${() => this.onOptionClick(a.name)}>
               ${a.name}
             </li>`;
           })}
         </ul>
         <main>
           <div>
-            <iconify-icon
-              icon="tabler:prompt"
-              width="24"
-              height="24"
-            ></iconify-icon>
+            <iconify-icon icon="tabler:prompt" width="24" height="24"></iconify-icon>
             ${command}
           </div>
           ${copyElement}

@@ -46,10 +46,7 @@ import fable from "vite-plugin-fable";
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    fable(),
-    react({ include: /\.(fs|js|jsx|ts|tsx)$/, jsxRuntime: "classic" }),
-  ],
+  plugins: [fable(), react({ include: /\.(fs|js|jsx|ts|tsx)$/, jsxRuntime: "classic" })],
 });
 ```
 
@@ -90,10 +87,7 @@ import fable from "vite-plugin-fable";
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    fable(),
-    react({ include: /\.(fs|js|jsx|ts|tsx)$/, jsxRuntime: "classic" }),
-  ],
+  plugins: [fable(), react({ include: /\.(fs|js|jsx|ts|tsx)$/, jsxRuntime: "classic" })],
 });
 ```
 

@@ -24,6 +24,8 @@ Order is a rough suggestion: the first three unblock building locally and shrink
 
 ## 2. Rethink `postinstall`
 
+_2026-08-29: the repo is now a Bun workspace (`packages/vite-plugin-fable` + `sample-project`, isolated linker). `postinstall` still runs `dotnet publish` inside the package; the distribution question below is unchanged._
+
 **Current state**
 
 - `package.json` `postinstall` runs `dotnet publish Fable.Daemon/Fable.Daemon.fsproj -c Release --ucr -p:PublishReadyToRun=true -o ./bin` on the consumer's machine. The npm package therefore ships F# sources (`files` includes `Fable.Daemon/**/*.fs`, `Directory.*.props`) rather than a built daemon.
@@ -69,6 +71,8 @@ Order is a rough suggestion: the first three unblock building locally and shrink
 - [ ] Check whether Fable upstream would accept the caching / dependent-files features so the plugin can shrink further.
 
 ## 4. Audit the Vite integration
+
+_2026-08-29: on Vite 8 (rolldown). The JSX post-transform now uses `transformWithOxc` from Vite instead of a direct `esbuild` dependency; `fable-library` is located via `import.meta.resolve`. The lifecycle/HMR questions below are still open._
 
 Questions to answer with the Vite 7 docs and, ideally, a small experiment in `sample-project`.
 

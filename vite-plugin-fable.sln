@@ -3,11 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fable.Daemon", "Fable.Daemon\Fable.Daemon.fsproj", "{0F2A7F4B-1FB2-4752-9598-C95B4BA74982}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fable.Daemon", "packages\vite-plugin-fable\Fable.Daemon\Fable.Daemon.fsproj", "{0F2A7F4B-1FB2-4752-9598-C95B4BA74982}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "App", "sample-project\App.fsproj", "{511D6D79-DCD1-4596-A94E-DD5E19C8C3E1}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fable.Daemon.Tests", "Fable.Daemon.Tests\Fable.Daemon.Tests.fsproj", "{C0D489F9-27C5-49D6-B674-209C30694BEC}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fable.Daemon.Tests", "packages\vite-plugin-fable\Fable.Daemon.Tests\Fable.Daemon.Tests.fsproj", "{C0D489F9-27C5-49D6-B674-209C30694BEC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

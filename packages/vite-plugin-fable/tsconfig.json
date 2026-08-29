@@ -4,9 +4,10 @@
     "checkJs": true,
     "noEmit": true,
     "strict": false,
+    "skipLibCheck": true,
     "target": "ESNext",
     "module": "NodeNext",
     "jsx": "react"
   },
-  "include": ["./index.js", "./docs/scripts/command.js"]
+  "include": ["./index.js", "../../docs/scripts/command.js"]
 }

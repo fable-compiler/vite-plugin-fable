@@ -4,23 +4,17 @@
   "tools": {
     "fantomas": {
       "version": "8.0.0-alpha-025",
-      "commands": [
-        "fantomas"
-      ],
+      "commands": ["fantomas"],
       "rollForward": false
     },
     "fsdocs-tool": {
       "version": "22.1.0",
-      "commands": [
-        "fsdocs"
-      ],
+      "commands": ["fsdocs"],
       "rollForward": false
     },
     "dotnet-outdated-tool": {
       "version": "4.8.1",
-      "commands": [
-        "dotnet-outdated"
-      ],
+      "commands": ["dotnet-outdated"],
       "rollForward": false
     }
   }

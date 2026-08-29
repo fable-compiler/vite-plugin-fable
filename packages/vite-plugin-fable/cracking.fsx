@@ -26,7 +26,7 @@ let fsproj =
     if lastArg.EndsWith (".fsproj", System.StringComparison.OrdinalIgnoreCase) then
         Path.GetFullPath lastArg
     else
-        Path.Combine (__SOURCE_DIRECTORY__, "sample-project/App.fsproj")
+        Path.Combine (__SOURCE_DIRECTORY__, "../../sample-project/App.fsproj")
         |> Path.GetFullPath
 
 let cliArgs : CliArgs =
@@ -38,7 +38,7 @@ let cliArgs : CliArgs =
         Precompile = false
         PrecompiledLib = None
         PrintAst = false
-        FableLibraryPath = Some (Path.Combine (__SOURCE_DIRECTORY__, "node_modules/@fable-org/fable-library-js"))
+        FableLibraryPath = Some (Path.Combine (__SOURCE_DIRECTORY__, "../../node_modules/@fable-org/fable-library-js"))
         Configuration = "Debug"
         NoRestore = false
         NoCache = true

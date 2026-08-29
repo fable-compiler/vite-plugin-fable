@@ -1,50 +1,29 @@
 {
-  "name": "vite-plugin-fable",
-  "version": "0.2.1",
-  "homepage": "http://fable.io/vite-plugin-fable/",
-  "description": "",
-  "main": "index.js",
+  "name": "vite-plugin-fable-monorepo",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "packages/*",
+      "sample-project"
+    ],
+    "catalog": {
+      "@fable-org/fable-library-js": "2.5.1",
+      "vite": "^8.2.2",
+      "vite-plugin-inspect": "^12.0.2"
+    }
+  },
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "format": "bunx --bun prettier ./package.json ./index.js ./types.d.ts ./sample-project/vite.config.js ./docs/*.md ./docs/content/*.css ./docs/scripts/*.js ./docs/*.html ./.devcontainer/devcontainer.json --write && dotnet fantomas .",
-    "postinstall": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./bin",
-    "lint": "bunx tsc",
-    "prepublishOnly": "bun changelog-updater.js"
-  },
-  "files": [
-    "index.js",
-    "cracking.fsx",
-    "Directory.Build.props",
-    "Directory.Packages.props",
-    "Fable.Daemon/*.fsproj",
-    "Fable.Daemon/**/*.fs",
-    "Fable.Daemon/**/*.fsi",
-    "Fable.Daemon/debug",
-    "!Fable.Daemon/obj",
-    "!Fable.Daemon/README.md"
-  ],
-  "keywords": [],
-  "author": "nojaf",
-  "license": "Apache-2.0",
-  "fundinding": "https://nojaf.com/",
-  "dependencies": {
-    "@babel/code-frame": "^7.26.2",
-    "@fable-org/fable-library-js": "2.5.1",
-    "promise.withresolvers": "^1.0.3",
-    "rxjs": "^7.8.1",
-    "ts-lsp-client": "1.0.4"
-  },
-  "peerDependencies": {
-    "esbuild": "*",
-    "vite": "^7.0.0"
+    "fmt": "oxfmt && dotnet fantomas .",
+    "fmt:check": "oxfmt --check && dotnet fantomas check .",
+    "lint": "bun run --cwd packages/vite-plugin-fable lint",
+    "build:daemon": "bun run --cwd packages/vite-plugin-fable postinstall",
+    "test": "dotnet test",
+    "sample": "bun run --cwd sample-project dev"
   },
   "devDependencies": {
-    "@types/node": "^22.10.7",
-    "copy-to-clipboard": "^3.3.3",
-    "keep-a-changelog": "^2.6.2",
-    "lit": "^3.2.1",
-    "prettier": "3.4.2",
-    "typescript": "5.7.3"
+    "copy-to-clipboard": "^4.0.2",
+    "lit": "^3.3.3",
+    "oxfmt": "0.65.0"
   }
 }

@@ -1,44 +1,44 @@
 body {
-    font-family: Rockwell, 'Rockwell Nova', 'Roboto Slab', 'DejaVu Serif', 'Sitka Small', serif;
-    font-weight: normal;
-    padding: 30px;
+  font-family: Rockwell, "Rockwell Nova", "Roboto Slab", "DejaVu Serif", "Sitka Small", serif;
+  font-weight: normal;
+  padding: 30px;
 }
 
 h1 {
-    font-weight: 400;
-    font-size: 40px;
+  font-weight: 400;
+  font-size: 40px;
 }
 
 #app {
-    margin: 60px auto;
-    padding: 30px;
-    background-color: lightgreen;
-    display: block;
-    max-width: 600px;
+  margin: 60px auto;
+  padding: 30px;
+  background-color: lightgreen;
+  display: block;
+  max-width: 600px;
+  border-radius: 6px;
+
+  & h1 {
+    margin: 0;
+    margin-bottom: 60px;
+  }
+
+  & button {
+    outline: 3px solid green;
+    background-color: limegreen;
+    color: white;
+    border: none;
     border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 20px;
+    display: block;
+    margin-inline: auto;
 
-    & h1 {
-        margin: 0;
-        margin-bottom: 60px;
+    &:hover {
+      background-color: green;
+      outline-color: darkgreen;
+      transform: translateY(-2px);
+      box-shadow: 0px 3px 3px 0px rgba(0, 0, 0, 0.25);
     }
-
-    & button {
-        outline: 3px solid green;
-        background-color: limegreen;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 5px 10px;
-        cursor: pointer;
-        font-size: 20px;
-        display: block;
-        margin-inline: auto;
-
-        &:hover {
-            background-color: green;
-            outline-color: darkgreen;
-            transform: translateY(-2px);
-            box-shadow: 0px 3px 3px 0px rgba(0,0,0,0.25);
-        }
-    }
+  }
 }

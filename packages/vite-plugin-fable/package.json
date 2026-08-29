@@ -1,0 +1,46 @@
+{
+  "name": "vite-plugin-fable",
+  "version": "0.2.1",
+  "description": "",
+  "keywords": [],
+  "homepage": "http://fable.io/vite-plugin-fable/",
+  "license": "Apache-2.0",
+  "author": "nojaf",
+  "funding": "https://nojaf.com/",
+  "files": [
+    "index.js",
+    "cracking.fsx",
+    "Directory.Build.props",
+    "Directory.Packages.props",
+    "Fable.Daemon/*.fsproj",
+    "Fable.Daemon/**/*.fs",
+    "Fable.Daemon/**/*.fsi",
+    "Fable.Daemon/debug",
+    "!Fable.Daemon/obj",
+    "!Fable.Daemon/README.md"
+  ],
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./bin",
+    "lint": "bunx tsc",
+    "prepublishOnly": "cp ../../Directory.Build.props ../../Directory.Packages.props . && bun ../../scripts/changelog-updater.js"
+  },
+  "dependencies": {
+    "@babel/code-frame": "^8.0.0",
+    "@fable-org/fable-library-js": "catalog:",
+    "picocolors": "^1.1.1",
+    "promise.withresolvers": "^1.0.4",
+    "rxjs": "^7.8.2",
+    "ts-lsp-client": "1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "keep-a-changelog": "^3.1.0",
+    "typescript": "7.0.2",
+    "vite": "catalog:"
+  },
+  "peerDependencies": {
+    "vite": "^8.0.0"
+  }
+}

@@ -1,6 +1,6 @@
 name: PR
 
-on: [ pull_request ]
+on: [pull_request]
 
 jobs:
   build:
@@ -20,24 +20,24 @@ jobs:
       - name: Restore tools
         run: dotnet tool restore
 
-      - name: Check formatting
-        run: dotnet fantomas check .
-
       - name: Restore solution
         run: dotnet restore
 
       - name: Install node_modules
         run: bun install --frozen-lockfile
 
+      - name: Check formatting
+        run: bun run format:check
+
       - name: TypeScript check
         run: bun run lint
 
       - name: Build daemon
-        run : bun run postinstall
+        run: bun run --cwd packages/vite-plugin-fable postinstall
 
       - name: Build sample
-        run: bun i && bun run build 2>&1 | grep -i "error" && exit 1 || true
+        run: bun run build
         working-directory: ./sample-project
 
       - name: Build docs
-        run: dotnet fsdocs build --noapidocs --projects "$(pwd)/Fable.Daemon/Fable.Daemon.fsproj"
+        run: dotnet fsdocs build --noapidocs --projects "$(pwd)/packages/vite-plugin-fable/Fable.Daemon/Fable.Daemon.fsproj"
