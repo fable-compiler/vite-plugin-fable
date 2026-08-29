@@ -1,8 +1,8 @@
 {
   "name": "vite-plugin-fable",
-  "version": "0.2.1",
-  "description": "",
-  "keywords": [],
+  "version": "0.0.0-changelog",
+  "description": "Compile F# with Fable from inside Vite, so a .fs file is just another module Vite can import.",
+  "keywords": ["vite", "vite-plugin", "fable", "fsharp", "f#", "dotnet", "hmr"],
   "homepage": "http://fable.io/vite-plugin-fable/",
   "bugs": "https://github.com/fable-compiler/vite-plugin-fable/issues",
   "license": "Apache-2.0",
