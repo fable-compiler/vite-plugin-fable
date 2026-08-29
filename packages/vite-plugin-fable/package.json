@@ -8,7 +8,7 @@
   "author": "nojaf",
   "funding": "https://nojaf.com/",
   "files": [
-    "index.js",
+    "dist",
     "cracking.fsx",
     "Directory.Build.props",
     "Directory.Packages.props",
@@ -20,11 +20,14 @@
     "!Fable.Daemon/README.md"
   ],
   "type": "module",
-  "main": "index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
-    "postinstall": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./bin",
-    "lint": "bunx tsc",
-    "prepublishOnly": "cp ../../Directory.Build.props ../../Directory.Packages.props . && bun ../../scripts/changelog-updater.js"
+    "build": "tsc",
+    "build:daemon": "dotnet publish Fable.Daemon/Fable.Daemon.fsproj --nologo -c Release --ucr -p:PublishReadyToRun=true -o ./bin",
+    "postinstall": "bun run build:daemon",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.docs.json",
+    "prepublishOnly": "cp ../../Directory.Build.props ../../Directory.Packages.props . && bun run build && bun ../../scripts/changelog-updater.js"
   },
   "dependencies": {
     "@babel/code-frame": "^8.0.0",

@@ -495,3 +495,6 @@ output/
 # copied from the repo root by prepublishOnly
 /packages/vite-plugin-fable/Directory.Build.props
 /packages/vite-plugin-fable/Directory.Packages.props
+
+# TypeScript build output for the Vite plugin
+packages/vite-plugin-fable/dist/

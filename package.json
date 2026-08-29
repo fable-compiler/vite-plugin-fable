@@ -14,10 +14,13 @@
   },
   "type": "module",
   "scripts": {
+    "postinstall": "bun run build",
+    "build": "bun run build:daemon && bun run build:plugin",
+    "build:daemon": "bun run --cwd packages/vite-plugin-fable build:daemon",
+    "build:plugin": "bun run --cwd packages/vite-plugin-fable build",
     "fmt": "oxfmt && dotnet fantomas .",
     "fmt:check": "oxfmt --check && dotnet fantomas check .",
     "lint": "bun run --cwd packages/vite-plugin-fable lint",
-    "build:daemon": "bun run --cwd packages/vite-plugin-fable postinstall",
     "test": "dotnet test",
     "sample": "bun run --cwd sample-project dev"
   },

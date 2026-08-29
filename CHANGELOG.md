@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The plugin is written in TypeScript. `index.js` and `types.d.ts` became `index.ts` and `types.ts`, compiled to `dist/` by `tsc` during `prepublishOnly`; the package now ships type declarations. Behaviour is unchanged.
+- `bun install` at the repo root now builds the daemon and the plugin (`bun run build`), so a fresh clone works without a manual build step. The plugin's own `postinstall` is now only the consumer hook and delegates to `build:daemon`.
 - Fable.Daemon now targets `net10.0`; the .NET 10 runtime is required.
 - Updated Fable.Compiler to 5.14.1 and `@fable-org/fable-library-js` to 2.5.1.
 - Project cracking now delegates to Fable's own `MSBuildCrackerResolver`. The design time build cache and watched MSBuild files are kept in `ProjectCracking.fs`; `CoolCatCracking.fs` was removed.
