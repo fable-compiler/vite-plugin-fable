@@ -7,9 +7,6 @@ open Microsoft.Extensions.Logging
 open Fable.Compiler
 open Fable.Compiler.ProjectCracker
 
-/// Wraps Fable's own MSBuildCrackerResolver with a design time build cache.
-/// The actual `dotnet msbuild` cracking is done by Fable.Compiler, this type only decides whether it needs to run
-/// and remembers the files that influence the MSBuild evaluation so the plugin can watch them.
 type CachedMSBuildCrackerResolver(logger : ILogger) =
     let inner = MSBuildCrackerResolver () :> ProjectCrackerResolver
     let cached = ConcurrentDictionary<FullPath, Caching.CacheKey>()
@@ -26,43 +23,27 @@ type CachedMSBuildCrackerResolver(logger : ILogger) =
             logger.LogWarning ("{fsproj} does not have a cache entry in CachedMSBuildCrackerResolver", fsproj)
             None
 
-    /// Under the same design time conditions and same Fable.Compiler, the used Fable libraries don't change.
     member x.TryGetCachedFableModuleFiles (fsproj : FullPath) : Map<FullPath, JavaScript> =
         match tryGetCacheKey fsproj with
         | None -> Map.empty
         | Some cacheKey -> Caching.loadFableModulesFromCache cacheKey
 
-    /// Try and write the fable_module compilation results to the cache.
     member x.WriteCachedFableModuleFiles (fsproj : FullPath) (fableModuleFiles : Map<FullPath, JavaScript>) =
         match tryGetCacheKey fsproj with
         | None -> ()
         | Some cacheKey -> Caching.writeFableModulesFromCache cacheKey fableModuleFiles
 
-    /// Drop the remembered cache keys, so the next crack asks MSBuild again which files its
-    /// evaluation depends on.
-    ///
-    /// A key is worth remembering for the length of one crack, where the same project can be
-    /// visited more than once, but not beyond it: `MSBuildAllProjects` is only re-read when a key
-    /// is built, so a key kept across cracks describes the project as it was. Add a
-    /// `Directory.Build.props` or an `<Import>` and the stale key compares the new project against
-    /// the old one's inputs, finds nothing changed, and reuses a design time build that predates
-    /// the file. The new file is also never reported to the plugin, so nothing watches it.
     member x.ForgetCacheKeys () : unit =
         cached.Clear ()
         decisions.Clear ()
 
-    /// The cache key the last crack built for this project, which names the files its MSBuild
-    /// evaluation depends on and where the cached design time build lives.
     member x.TryGetCacheKey (fsproj : FullPath) : Caching.CacheKey option = tryGetCacheKey fsproj
 
-    /// Whether the last crack of this project reused its design time build cache, and if not, why.
     member x.CacheDecision (fsproj : FullPath) : Result<unit, Caching.InvalidCacheReason> option =
         match decisions.TryGetValue fsproj with
         | true, decision -> Some decision
         | false, _ -> None
 
-    /// Get project files to watch inside the plugin
-    /// These are the fsproj and potential MSBuild import files
     member x.MSBuildProjectFiles (fsproj : FullPath) : FileInfo list =
         match tryGetCacheKey fsproj with
         | None -> List.empty

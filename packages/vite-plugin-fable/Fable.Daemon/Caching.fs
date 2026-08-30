@@ -26,7 +26,6 @@ let fableCompilerVersion =
 
     attribute.InformationalVersion
 
-/// Calculates the SHA256 hash of the given file.
 type FileInfo with
     member this.Hash : string =
         use sha256 = System.Security.Cryptography.SHA256.Create ()
@@ -47,8 +46,6 @@ type InvalidCacheReason =
     | NoReflectionMismatch of cachedNoReflection : bool * currentNoReflection : bool
     | CacheFormatChanged of cachedVersion : int * currentVersion : int
 
-/// A stable name for why a design time build cache could not be reused, and the detail behind it.
-/// The name is what a tool matches on, so it stays put when the wording of the detail changes.
 let describeInvalidCacheReason (reason : InvalidCacheReason) : string * string =
     match reason with
     | InvalidCacheReason.FileDoesNotExist cacheFile -> "fileDoesNotExist", cacheFile.FullName
@@ -68,29 +65,15 @@ let describeInvalidCacheReason (reason : InvalidCacheReason) : string * string =
     | InvalidCacheReason.CacheFormatChanged (cached, current) ->
         "cacheFormatChanged", $"cached: %i{cached}, current: %i{current}"
 
-/// Contains all the info that determines the cache design time build value.
-/// This is not the cached information!
 type CacheKey =
     {
-        /// Input fsproj project.
         MainFsproj : FileInfo
-        /// This is the file that contains the cached information.
-        /// Initially it doesn't exist and can only be checked in subsequent runs.
         CacheFile : FileInfo
-        /// All the files that can influence the MSBuild evaluation.
-        /// This typically is the
         DependentFiles : FileInfo list
-        /// Contains both the user defined configurations (via Vite plugin options)
         Defines : Set<string>
-        /// Configuration
         Configuration : string
-        /// Files excluded from compilation (via Vite plugin options).
-        /// Changes what Fable emits, so it has to invalidate the cache.
         Exclude : string list
-        /// Whether reflection info is emitted (via Vite plugin options).
-        /// Changes what Fable emits, so it has to invalidate the cache.
         NoReflection : bool
-        /// AssemblyInformationalVersion of Fable.Compiler
         FableCompilerVersion : string
     }
 
@@ -135,9 +118,8 @@ type DesignTimeBuildCache =
         CacheFormatVersion : int
     }
 
-let private isWindows = RuntimeInformation.IsOSPlatform OSPlatform.Windows
+let isWindows = RuntimeInformation.IsOSPlatform OSPlatform.Windows
 
-/// Save the compiler arguments results from the design time build to the intermediate folder.
 let writeDesignTimeBuild (x : CacheKey) (response : ProjectOptionsResponse) =
     use fs = File.Create x.CacheFile.FullName
 
@@ -164,9 +146,8 @@ let writeDesignTimeBuild (x : CacheKey) (response : ProjectOptionsResponse) =
 
     Serializer.Serialize (fs, data)
 
-let private emptyArrayIfNull a = if isNull a then Array.empty else a
+let emptyArrayIfNull a = if isNull a then Array.empty else a
 
-/// Verify is the cached key for the project exists and is still valid.
 let canReuseDesignTimeBuildCache (cacheKey : CacheKey) : Result<ProjectOptionsResponse, InvalidCacheReason> =
     if not cacheKey.CacheFile.Exists then
         Error (InvalidCacheReason.FileDoesNotExist cacheKey.CacheFile)
@@ -231,7 +212,7 @@ let canReuseDesignTimeBuildCache (cacheKey : CacheKey) : Result<ProjectOptionsRe
     with ex ->
         Error (InvalidCacheReason.CouldNotDeserialize ex.Message)
 
-let private decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json : string) : Result<CacheKey, string> =
+let decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json : string) : Result<CacheKey, string> =
     try
         use document = JsonDocument.Parse json
         let properties = document.RootElement.GetProperty "Properties"
@@ -326,7 +307,6 @@ let private decodeCacheKey (options : CrackerOptions) (fsproj : FileInfo) (json 
     with ex ->
         Error $"Could not decode MSBuild output:\n%s{json}\n%s{ex.Message}"
 
-/// Generate the caching key information for the design time build of the incoming fsproj file.
 let mkProjectCacheKey
     (logger : ILogger)
     (options : CrackerOptions)
@@ -359,8 +339,6 @@ type FableModulesProto =
         Files : KeyValuePairProto array
     }
 
-/// Try and load the previous compiled fable-modules files.
-/// These should not change if the cache remained stable.
 let loadFableModulesFromCache (cacheKey : CacheKey) : Map<FullPath, JavaScript> =
     if not cacheKey.FableModulesCacheFile.Exists then
         Map.empty

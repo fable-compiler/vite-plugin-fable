@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -8,8 +8,11 @@
 
   <ItemGroup>
     <Compile Include="Types.fs" />
+    <Compile Include="MSBuild.fsi" />
     <Compile Include="MSBuild.fs" />
+    <Compile Include="Caching.fsi" />
     <Compile Include="Caching.fs" />
+    <Compile Include="ProjectCracking.fsi" />
     <Compile Include="ProjectCracking.fs" />
     <!-- Copied next to the assembly, because the daemon now ships prebuilt: it is no longer
          compiled in the folder it is served from. -->
