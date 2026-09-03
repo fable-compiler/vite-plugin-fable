@@ -73,9 +73,10 @@ announces itself in `$TMPDIR/vite-plugin-fable/daemon-<pid>.json`.
   expression, which can match a `toThrow` regex and pass for the wrong reason.
 - **The stub daemon must return files downstream of the edited one**, because the real daemon
   does. Tests that only return the requested file agree with bugs the plugin no longer has.
-
-## `patches/`
-
-`crossws@0.4.12.patch` drops a guard that refuses to run crossws's Node WebSocket adapter under
-Bun. Without it, Vite DevTools cannot start on the Bun runtime. Pinned to that exact version, so a
-bump needs it rebased; upstream fix tracked at devframes/devframe#317.
+- **On Bun, the embedded DevTools RPC runs over SSE, not WebSocket.** Vite owns the `node:http`
+  server, and devframe cannot re-host a foreign server on a native runtime, so it advertises
+  `"backend":"sse"` in `/__devtools/__connection.json` and the RPC rides `/__devtools/__sse`. The
+  `crossws/adapters/bun` transport only binds in servers devframe owns (hub CLI, sidecar), so a
+  `ws://localhost:4000/__ws` probe timing out proves nothing. Routes sit under `/__devtools/`, and
+  Vite's SPA fallback answers 200 with `index.html` for wrong paths. Fixed by devframe 0.9.9
+  (devframes/devframe#322); before that it needed `patches/crossws@0.4.12.patch`, since removed.

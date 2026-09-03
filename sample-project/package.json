@@ -16,9 +16,9 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
-    "@vitejs/devtools": "^0.6.2",
-    "@vitejs/devtools-vite": "^0.6.2",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/devtools": "^0.7.1",
+    "@vitejs/devtools-vite": "^0.7.1",
     "@vitejs/plugin-react": "^6.1.1",
     "vite": "catalog:",
     "vite-plugin-fable": "workspace:*",
