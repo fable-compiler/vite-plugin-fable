@@ -20,7 +20,7 @@ export interface DiagnosticRange {
 
 /** A diagnostic message, typically an error or warning, within a file. */
 export interface Diagnostic {
-  /** The error number or identifier text. */
+  /** The F# error number, `FS0025` and the like. Empty for what Fable reported itself. */
   errorNumberText: string;
   /** The descriptive diagnostic message. */
   message: string;
@@ -30,6 +30,13 @@ export interface Diagnostic {
   severity: string;
   /** The name of the file containing the diagnostic. */
   fileName: string;
+  /**
+   * Which half of the compiler reported this: `FSHARP` for the F# compiler, `FABLE` for something
+   * Fable could not translate. An F# error means the code does not compile; a Fable one means it
+   * compiles but cannot be turned into JavaScript, so the file would otherwise be emitted as a
+   * module that does nothing.
+   */
+  tag: string;
 }
 
 /** The MSBuild configuration the F# project is compiled with. */
@@ -165,7 +172,7 @@ export interface ProjectRequest {
   noReflection: boolean;
 }
 
-/** The result of compiling a set of changed F# files. */
+/** The result of compiling F# files, whether the whole project or the ones that changed. */
 export interface CompileResult {
   /** Compiled JavaScript per source file path, as the daemon reported it. */
   compiledFiles: Record<string, string>;
@@ -183,8 +190,14 @@ export interface CompileResult {
 export interface FableDaemon {
   /** Cracks and type-checks the project. Nothing is compiled yet. */
   projectChanged(request: ProjectRequest): Promise<ProjectFileData>;
-  /** Compiles the whole project, returning compiled JavaScript per source file path. */
-  initialCompile(): Promise<Record<string, string>>;
+  /**
+   * Compiles the whole project.
+   *
+   * Its diagnostics are Fable's own: the F# ones belong to the type-check `projectChanged` did,
+   * which already reported them. What only a compile can find is a file that type-checks but that
+   * Fable cannot translate.
+   */
+  initialCompile(): Promise<CompileResult>;
   /** Recompiles the given files and whatever depends on them. */
   compile(files: string[]): Promise<CompileResult>;
   /** Stops the daemon. Safe to call more than once. */

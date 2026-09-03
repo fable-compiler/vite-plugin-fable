@@ -32,11 +32,17 @@ type DiagnosticRange =
 
 type Diagnostic =
     {
+        /// The F# error number, `FS0025` and the like. Empty for anything Fable reported itself,
+        /// which has no such number.
         ErrorNumberText : string
         Message : string
         Range : DiagnosticRange
         Severity : string
         FileName : FullPath
+        /// Which half of the compiler reported this: `FSHARP` for the F# compiler, `FABLE` for
+        /// something Fable could not translate. An F# error means the code does not compile; a
+        /// Fable one means it compiles but cannot be turned into JavaScript.
+        Tag : string
     }
 
 [<RequireQualifiedAccess>]
@@ -46,7 +52,7 @@ type ProjectChangedResult =
 
 [<RequireQualifiedAccess>]
 type FilesCompiledResult =
-    | Success of compiledFSharpFiles : Map<FullPath, JavaScript>
+    | Success of compiledFSharpFiles : Map<FullPath, JavaScript> * diagnostics : Diagnostic array
     | Error of error : string
 
 [<RequireQualifiedAccess>]

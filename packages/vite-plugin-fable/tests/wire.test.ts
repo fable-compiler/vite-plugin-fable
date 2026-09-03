@@ -22,6 +22,18 @@ const diagnostic: Diagnostic = {
   severity: "Warning",
   fileName: "/project/Math.fs",
   range: { startLine: 3, startColumn: 4, endLine: 3, endColumn: 9 },
+  tag: "FSHARP",
+};
+
+/** What Fable reports itself: no error number, and tagged as its own rather than the F# compiler's. */
+const fableDiagnostic: Diagnostic = {
+  errorNumberText: "",
+  message:
+    "Microsoft.FSharp.Control.FSharpAsync.RunSynchronously (static) is not supported by Fable",
+  severity: "Error",
+  fileName: "/project/Math.fs",
+  range: { startLine: 7, startColumn: 12, endLine: 7, endColumn: 41 },
+  tag: "FABLE",
 };
 
 describe("wire", () => {
@@ -35,8 +47,10 @@ describe("wire", () => {
   });
 
   test("decodes a fable/initial-compile response", () => {
-    expect(decodeInitialCompile(fixture("initial-compile.json"))).toEqual({
-      "/project/Math.fs": "export const sum = 1;",
+    const decoded: CompileResult = decodeInitialCompile(fixture("initial-compile.json"));
+    expect(decoded).toEqual({
+      compiledFiles: { "/project/Math.fs": "export const sum = 1;" },
+      diagnostics: [fableDiagnostic],
     });
   });
 
@@ -44,7 +58,7 @@ describe("wire", () => {
     const decoded: CompileResult = decodeCompile(fixture("compile.json"));
     expect(decoded).toEqual({
       compiledFiles: { "/project/Math.fs": "export const sum = 2;" },
-      diagnostics: [diagnostic],
+      diagnostics: [diagnostic, fableDiagnostic],
     });
   });
 

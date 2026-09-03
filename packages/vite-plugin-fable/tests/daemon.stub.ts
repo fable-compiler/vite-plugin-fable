@@ -15,6 +15,8 @@ export interface StubDaemonOptions {
   projectDiagnostics?: Diagnostic[];
   /** Compiled output keyed by source path, returned from `initialCompile`. */
   compiled?: Record<string, string>;
+  /** Diagnostics returned from `initialCompile`, which is where Fable's own logs arrive. */
+  initialCompileDiagnostics?: Diagnostic[];
 }
 
 /**
@@ -123,10 +125,13 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
       };
     },
 
-    async initialCompile(): Promise<Record<string, string>> {
+    async initialCompile(): Promise<CompileResult> {
       guard();
       initialCompileCalls += 1;
-      return compiled;
+      return {
+        compiledFiles: compiled,
+        diagnostics: options.initialCompileDiagnostics ?? [],
+      };
     },
 
     async compile(files: string[]): Promise<CompileResult> {

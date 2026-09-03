@@ -65,6 +65,7 @@ function asDiagnostics(method: string, value: unknown, what: string): Diagnostic
       message: asString(method, diagnostic.message, `${at}.message`),
       severity: asString(method, diagnostic.severity, `${at}.severity`),
       fileName: asString(method, diagnostic.fileName, `${at}.fileName`),
+      tag: asString(method, diagnostic.tag, `${at}.tag`),
       range: {
         startLine: asNumber(method, range.startLine, `${at}.range.startLine`),
         startColumn: asNumber(method, range.startColumn, `${at}.range.startColumn`),
@@ -106,10 +107,13 @@ export function decodeProjectChanged(response: unknown): ProjectFileData {
 }
 
 /** Decodes a `fable/initial-compile` response. */
-export function decodeInitialCompile(response: unknown): Record<string, string> {
+export function decodeInitialCompile(response: unknown): CompileResult {
   const method = "fable/initial-compile";
   const fields: Record<string, unknown> = success(method, response);
-  return asStringRecord(method, fields.compiledFSharpFiles, "compiledFSharpFiles");
+  return {
+    compiledFiles: asStringRecord(method, fields.compiledFSharpFiles, "compiledFSharpFiles"),
+    diagnostics: asDiagnostics(method, fields.diagnostics, "diagnostics"),
+  };
 }
 
 /** Decodes a `fable/compile` response. */

@@ -16,7 +16,8 @@
           "endColumn": 9
         },
         "severity": "Warning",
-        "fileName": "/project/Math.fs"
+        "fileName": "/project/Math.fs",
+        "tag": "FSHARP"
       }
     ],
     "dependentFiles": [
