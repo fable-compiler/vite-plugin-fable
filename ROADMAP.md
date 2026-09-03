@@ -43,7 +43,7 @@ What this shape would still not show is the plugin's own view: which files a hot
 
 **How it actually runs**, which is not shaped like `vite-plugin-inspect`
 
-DevTools is a **separate CLI on its own port**, not a route on your dev server. `vite-devtools` (shipped as a bin by `@vitejs/devtools`) reads the Vite config, starts on port 9999 by default and opens a browser. Adding `DevTools()` to `plugins` injects nothing into the app page and mounts no `/__devtools/` route. The embedded panel does work on Bun, but only because of `patches/crossws@0.4.12.patch`; `CLAUDE.md` covers what that patch does and why it is pinned.
+DevTools is a **separate CLI on its own port**, not a route on your dev server. `vite-devtools` (shipped as a bin by `@vitejs/devtools`) reads the Vite config, starts on port 9999 by default and opens a browser. The embedded `DevTools()` plugin does mount a `/__devtools/` base on the dev server (connection meta, SSE RPC, viewer assets), but injects nothing visible into the app page. It works on Bun: since devframe 0.9.9 the RPC transport adapts to the runtime, and under Vite it falls back to SSE.
 
 **Unverified, and the reason not to start yet**
 
@@ -52,7 +52,7 @@ Whether custom panels are supported at all. `@vitejs/devtools-kit` and `@vitejs/
 **To do**
 
 - [ ] Confirm whether custom panels are supported, and how, before building anything against an early-preview tool.
-- [ ] Track [devframes/devframe#317](https://github.com/devframes/devframe/issues/317); the embedded plugin needs it, the standalone CLI does not. Until it lands, a `crossws` bump needs the patch rebased.
+- [x] Track [devframes/devframe#317](https://github.com/devframes/devframe/issues/317); fixed in devframe 0.9.9 ([#322](https://github.com/devframes/devframe/pull/322)), which binds a runtime-appropriate RPC transport on Bun/Deno. The `crossws` patch is removed.
 - [ ] If both clear, decide whether a panel earns its keep next to `/api`, and if so build it and delete `debug/index.html` and the WebSocket feed.
 
 ## 3. Plain F# modules always force a page reload
