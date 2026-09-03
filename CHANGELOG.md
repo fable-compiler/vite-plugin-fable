@@ -5,15 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
-## [Unreleased]
+## [0.4.0] - 2026-09-03
 
 ### Fixed
 
-- An F# file that type-checks but that Fable cannot translate now fails `vite build` instead of passing for a successful compile. `Fable.Compiler` filled a compile's diagnostics from the F# type-check only and discarded Fable's own logs, so a call like `Async.RunSynchronously` produced a module that does nothing while the build printed nothing and exited 0, and the app broke in the browser. Fixed upstream in [fable-compiler/Fable#4923](https://github.com/fable-compiler/Fable/pull/4923), which this release picks up: the daemon now reports what Fable said alongside the F# diagnostics, for the first compile of the project as well as for every recompile after an edit, so these errors reach the terminal, the browser overlay and `/api/diagnostics`. They carry no error number, so they are named by their tag — `ERROR FABLE:` where an F# diagnostic reads `ERROR FS0025:`. Diagnostics on files under `fable_modules` are still dropped unless `fableModulesDiagnostics` is on.
+- An F# file that type-checks but that Fable cannot translate now fails `vite build` instead of passing for a successful compile. `Fable.Compiler` filled a compile's diagnostics from the F# type-check only and discarded Fable's own logs, so a call like `Async.RunSynchronously` produced a module that does nothing while the build printed nothing and exited 0, and the app broke in the browser. Fixed upstream in [fable-compiler/Fable#4923](https://github.com/fable-compiler/Fable/pull/4923), which this release picks up: the daemon now reports what Fable said alongside the F# diagnostics, for the first compile of the project as well as for every recompile after an edit, so these errors reach the terminal, the browser overlay and `/api/diagnostics`. They carry no error number, so they are named by their tag — `ERROR FABLE:` where an F# diagnostic reads `ERROR FS0025:`. Diagnostics on files under `fable_modules` are still dropped unless `fableModulesDiagnostics` is on. ([#67](https://github.com/fable-compiler/vite-plugin-fable/pull/67))
 
 ### Changed
 
-- Updated Fable.Compiler to 5.15.0 and `@fable-org/fable-library-js` to 2.6.0.
+- Updated Fable.Compiler to 5.15.0 and `@fable-org/fable-library-js` to 2.6.0. ([#67](https://github.com/fable-compiler/vite-plugin-fable/pull/67))
 
 ## [0.3.1] - 2026-08-29
 
