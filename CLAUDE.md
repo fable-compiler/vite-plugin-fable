@@ -21,7 +21,7 @@ else's contract:
   hook-contract questions definitively. Several plugin bugs were misdiagnosed from assumptions
   about Vite that the source contradicted, and several fixes in the git history cite line numbers
   from it.
-- `../Fable` — Fable 5.14. Notably `src/Fable.Compiler/Library.fs`, where
+- `../Fable` — Fable 5.15. Notably `src/Fable.Compiler/Library.fs`, where
   `FileWriter.AddSourceMapping` is a no-op, so `CliArgs.SourceMaps` does nothing.
 
 ## Seeing what the plugin actually emitted, without a browser

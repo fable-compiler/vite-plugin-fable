@@ -167,7 +167,10 @@ export function createFablePlugin(
   }
 
   function formatDiagnostic(diagnostic: Diagnostic): string {
-    return `${diagnostic.severity.toUpperCase()} ${diagnostic.errorNumberText}: ${diagnostic.message} ${diagnostic.fileName} (${diagnostic.range.startLine},${diagnostic.range.startColumn}) (${diagnostic.range.endLine},${diagnostic.range.endColumn})`;
+    // Fable's own logs carry no error number, so they are named by their tag instead. Leaving it
+    // out would print `ERROR : ...` and read like a message the plugin failed to fill in.
+    const code: string = diagnostic.errorNumberText || diagnostic.tag;
+    return `${diagnostic.severity.toUpperCase()} ${code}: ${diagnostic.message} ${diagnostic.fileName} (${diagnostic.range.startLine},${diagnostic.range.startColumn}) (${diagnostic.range.endLine},${diagnostic.range.endColumn})`;
   }
 
   /** `fable_modules` is where Fable restores the sources of the packages a project depends on. */
@@ -243,8 +246,15 @@ export function createFablePlugin(
       state.dependentFiles.add(dependentFile);
       addWatchFile(dependentFile);
     }
-    const compiledFSharpFiles: Record<string, string> = await requireDaemon().initialCompile();
+    const compileResult: CompileResult = await requireDaemon().initialCompile();
+    const compiledFSharpFiles: Record<string, string> = compileResult.compiledFiles;
     logInfo(`compiled ${short(requireFsproj())} in ${since(started)}`);
+    // What Fable itself reported. A file that type-checks but that Fable cannot translate is
+    // reported here and nowhere else: it compiles to a module that does nothing, so without this
+    // `vite build` would exit 0 having emitted an app that breaks in the browser.
+    const compileDiagnostics: Diagnostic[] = reportableDiagnostics(compileResult.diagnostics);
+    logDiagnostics(compileDiagnostics);
+    failBuildOnErrors(compileDiagnostics);
     state.sourceFiles.forEach((file: string): void => addWatchFile(file));
     // Key off what the daemon returned rather than looking each source file up in it: the two sets
     // differ (signature files are never compiled), and indexing a raw-keyed map with an
@@ -545,17 +555,25 @@ export function createFablePlugin(
   }
 
   async function makeHmrError(diagnostic: Diagnostic): Promise<HotPayload> {
-    const fileContent: string = await fs.readFile(diagnostic.fileName, "utf-8");
-    const frame: string = codeFrameColumns(fileContent, {
-      start: {
-        line: diagnostic.range.startLine,
-        column: diagnostic.range.startColumn,
-      },
-      end: {
-        line: diagnostic.range.endLine,
-        column: diagnostic.range.endColumn,
-      },
-    });
+    // A Fable log names its file the way the F# compiler does, but the type allows it to be
+    // absent, and the source can have been deleted since the compile that reported this. The
+    // overlay is worth showing without the code frame; throwing here would lose the error itself.
+    let frame = "";
+    try {
+      const fileContent: string = await fs.readFile(diagnostic.fileName, "utf-8");
+      frame = codeFrameColumns(fileContent, {
+        start: {
+          line: diagnostic.range.startLine,
+          column: diagnostic.range.startColumn,
+        },
+        end: {
+          line: diagnostic.range.endLine,
+          column: diagnostic.range.endColumn,
+        },
+      });
+    } catch {
+      logDebug("makeHmrError", `no code frame for ${diagnostic.fileName || "an unnamed file"}`);
+    }
     return {
       type: "error",
       err: {

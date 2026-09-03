@@ -224,6 +224,23 @@ function errorAt(file: string): Diagnostic {
     range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 5 },
     severity: "Error",
     fileName: file,
+    tag: "FSHARP",
+  };
+}
+
+/**
+ * What Fable reports about a file that type-checks but that it cannot translate. It carries no
+ * error number, and only a compile can find it: the type-check has nothing to say about it.
+ */
+function fableErrorAt(file: string): Diagnostic {
+  return {
+    errorNumberText: "",
+    message:
+      "Microsoft.FSharp.Control.FSharpAsync.RunSynchronously (static) is not supported by Fable",
+    range: { startLine: 7, startColumn: 12, endLine: 7, endColumn: 41 },
+    severity: "Error",
+    fileName: file,
+    tag: "FABLE",
   };
 }
 
@@ -423,6 +440,24 @@ describe("buildStart", () => {
     expect(h.daemon.projectChangedCalls).toHaveLength(1);
   });
 
+  test("fails the build on an error Fable reported while translating", async () => {
+    // The file type-checks, so `projectChanged` says nothing about it; without the compile's own
+    // logs the build would exit 0 having emitted a module that does nothing.
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], initialCompileDiagnostics: [fableErrorAt(mathFs)] },
+    );
+    expect(h.start(buildConfig())).rejects.toThrow(/is not supported by Fable/);
+  });
+
+  test("names a Fable error by its tag, having no error number to print", async () => {
+    const lines: string[] = await linesFrom(
+      {},
+      { sourceFiles: [mathFs], initialCompileDiagnostics: [fableErrorAt(mathFs)] },
+    );
+    expect(lines.join("\n")).toContain("ERROR FABLE:");
+  });
+
   test("keeps building when the project only produces warnings", async () => {
     const warning: Diagnostic = { ...errorAt(mathFs), severity: "Warning" };
     const h: Harness = harness({}, { sourceFiles: [mathFs], projectDiagnostics: [warning] });
@@ -591,6 +626,14 @@ describe("fable_modules diagnostics", () => {
     await h.hotUpdate(mathFs);
 
     expect(lines.join("\n")).not.toContain("This expression was expected to have type int");
+  });
+
+  test("drops what Fable reported about a restored package's own sources", async () => {
+    const lines: string[] = await linesFrom(
+      {},
+      { ...project, initialCompileDiagnostics: [fableErrorAt(packageFs)] },
+    );
+    expect(lines.join("\n")).not.toContain("is not supported by Fable");
   });
 
   test("an error in a restored package no longer fails the build", async () => {

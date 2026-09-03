@@ -102,7 +102,7 @@ export function startDaemon(logger: DaemonLogger, options: DaemonOptions): Fable
       return decodeProjectChanged(await send("fable/project-changed", request));
     },
 
-    async initialCompile(): Promise<Record<string, string>> {
+    async initialCompile(): Promise<CompileResult> {
       return decodeInitialCompile(await send("fable/initial-compile"));
     },
 

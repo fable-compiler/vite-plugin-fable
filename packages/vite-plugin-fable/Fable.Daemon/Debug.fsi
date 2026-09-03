@@ -51,8 +51,10 @@ val isEnabled : unit -> bool
 /// decides which files the project even has.
 val publishProject : project : ProjectState -> unit
 
-/// Record what a full project compile produced.
-val publishInitialCompile : compiled : Map<FullPath, JavaScript> -> fromCache : Set<FullPath> -> unit
+/// Record what a full project compile produced. The diagnostics are Fable's own; the F# ones
+/// belong to the crack that came before and are reported there.
+val publishInitialCompile :
+    compiled : Map<FullPath, JavaScript> -> fromCache : Set<FullPath> -> diagnostics : Diagnostic array -> unit
 
 /// Record what compiling a set of changed files produced, merged over what was compiled before,
 /// the way the plugin merges it into its own map.

@@ -3,6 +3,21 @@
   "fields": {
     "compiledFSharpFiles": {
       "/project/Math.fs": "export const sum = 1;"
-    }
+    },
+    "diagnostics": [
+      {
+        "errorNumberText": "",
+        "message": "Microsoft.FSharp.Control.FSharpAsync.RunSynchronously (static) is not supported by Fable",
+        "range": {
+          "startLine": 7,
+          "startColumn": 12,
+          "endLine": 7,
+          "endColumn": 41
+        },
+        "severity": "Error",
+        "fileName": "/project/Math.fs",
+        "tag": "FABLE"
+      }
+    ]
   }
 }

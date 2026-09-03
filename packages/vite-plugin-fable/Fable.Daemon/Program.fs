@@ -211,6 +211,9 @@ let tryTypeCheckProject
 type CompiledProjectData =
     {
         CompiledFSharpFiles : Map<string, string>
+        /// What Fable reported while translating. The F# diagnostics are not repeated here: the
+        /// project was type-checked by the crack that came before, which already reported them.
+        Diagnostics : Diagnostic array
         /// The files answered from the `fable_modules` cache rather than compiled just now.
         FromCache : Set<FullPath>
     }
@@ -232,6 +235,52 @@ let private mapDiagnostics (ds : FSharpDiagnostic array) =
             Range = mapRange d.Range
             Severity = string d.Severity
             FileName = d.FileName
+            Tag = "FSHARP"
+        }
+    )
+
+/// What Fable itself reported while translating, dropping the F# diagnostics it reports alongside.
+///
+/// Since Fable 5.15 a compile answers with `Logs` rather than the type-check's diagnostics: the F#
+/// half tagged `FSHARP` with its error number folded into the message, and everything Fable raised
+/// tagged `FABLE`. The F# half is dropped here and taken from `FSharpDiagnostic` instead, which
+/// still carries the error number as a field of its own.
+///
+/// This is what a file that type-checks but that Fable cannot translate reports. Before 5.15 those
+/// logs were discarded inside `Fable.Compiler`, so such a file compiled to `return null` and the
+/// build said nothing.
+let private mapFableLogs (logs : Fable.Transforms.State.LogEntry array) : Diagnostic array =
+    logs
+    |> Array.filter (fun log -> log.Tag <> "FSHARP")
+    |> Array.map (fun log ->
+        {
+            ErrorNumberText = ""
+            Message = log.Message
+            Range =
+                match log.Range with
+                | Some range ->
+                    {
+                        StartLine = range.start.line
+                        StartColumn = range.start.column
+                        EndLine = range.``end``.line
+                        EndColumn = range.``end``.column
+                    }
+                | None ->
+                    // What `Fable.Cli` prints for a log without a range, so the message still
+                    // points at the file it is about.
+                    {
+                        StartLine = 1
+                        StartColumn = 1
+                        EndLine = 1
+                        EndColumn = 1
+                    }
+            Severity =
+                match log.Severity with
+                | Severity.Error -> "Error"
+                | Severity.Warning -> "Warning"
+                | Severity.Info -> "Info"
+            FileName = Option.defaultValue "" log.FileName
+            Tag = log.Tag
         }
     )
 
@@ -327,6 +376,7 @@ let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<Compiled
                 Ok
                     {
                         CompiledFSharpFiles = compiledFiles
+                        Diagnostics = mapFableLogs initialCompileResponse.Logs
                         FromCache = cachedFableModuleFiles.Keys |> Set.ofSeq
                     }
         with ex ->
@@ -337,7 +387,9 @@ let tryCompileProject (logger : ILogger) (model : Model) : Async<Result<Compiled
 type CompiledFileData =
     {
         CompiledFiles : Map<string, string>
-        Diagnostics : FSharpDiagnostic array
+        /// The type-check of the project up to the last file compiled, plus whatever Fable
+        /// reported while translating.
+        Diagnostics : Diagnostic array
     }
 
 /// Find all the dependent files as efficient as possible.
@@ -436,7 +488,10 @@ let tryCompileFiles
                 Ok
                     {
                         CompiledFiles = compiledFileResponse.CompiledFiles
-                        Diagnostics = compiledFileResponse.Diagnostics
+                        Diagnostics =
+                            Array.append
+                                (mapDiagnostics checkProjectResult.Diagnostics)
+                                (mapFableLogs compiledFileResponse.Logs)
                     }
         with ex ->
             logger.LogCritical ("tryCompileFile threw exception {ex}", ex)
@@ -544,8 +599,11 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                         match result with
                         | Error error -> replyChannel.Reply (FilesCompiledResult.Error error)
                         | Ok result ->
-                            replyChannel.Reply (FilesCompiledResult.Success result.CompiledFSharpFiles)
-                            Debug.publishInitialCompile result.CompiledFSharpFiles result.FromCache
+                            replyChannel.Reply (
+                                FilesCompiledResult.Success (result.CompiledFSharpFiles, result.Diagnostics)
+                            )
+
+                            Debug.publishInitialCompile result.CompiledFSharpFiles result.FromCache result.Diagnostics
 
                         return Some model
 
@@ -555,9 +613,9 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                         match result with
                         | Error error -> replyChannel.Reply (FileChangedResult.Error error)
                         | Ok result ->
-                            let diagnostics = mapDiagnostics result.Diagnostics
-                            replyChannel.Reply (FileChangedResult.Success (result.CompiledFiles, diagnostics))
-                            Debug.publishFileCompile result.CompiledFiles diagnostics (Array.ofList fileNames)
+                            replyChannel.Reply (FileChangedResult.Success (result.CompiledFiles, result.Diagnostics))
+
+                            Debug.publishFileCompile result.CompiledFiles result.Diagnostics (Array.ofList fileNames)
 
                         return Some model
 
@@ -664,13 +722,15 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                 ""
                 sw.Elapsed.TotalMilliseconds
                 (match response with
-                 | FilesCompiledResult.Success compiled -> $"success: %i{compiled.Count} files"
+                 | FilesCompiledResult.Success (compiled, _) -> $"success: %i{compiled.Count} files"
                  | FilesCompiledResult.Error error -> $"error: %s{error}")
 
             let logResponse =
                 match response with
                 | FilesCompiledResult.Error e -> box e
-                | FilesCompiledResult.Success result -> result.Keys |> String.concat "\n" |> sprintf "\n%s" |> box
+                | FilesCompiledResult.Success (result, diagnostics) ->
+                    let keys = result.Keys |> String.concat "\n" |> sprintf "\n%s"
+                    box (keys, diagnostics)
 
             logger.LogDebug ("exit \"fable/initial-compile\" with {logResponse}", logResponse)
             return response

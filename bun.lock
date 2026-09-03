@@ -56,7 +56,7 @@
     },
   },
   "catalog": {
-    "@fable-org/fable-library-js": "2.5.1",
+    "@fable-org/fable-library-js": "2.6.0",
     "vite": "^8.2.2",
     "vite-plugin-inspect": "^12.0.2",
   },
@@ -83,7 +83,7 @@
 
     "@devframes/vite": ["@devframes/vite@0.9.10", "", { "dependencies": { "pathe": "^2.0.3" }, "peerDependencies": { "@devframes/hub": "0.9.10", "@devframes/hub-ui": "0.9.10", "devframe": "0.9.10", "vite": "^7.0.0 || ^8.0.0" }, "optionalPeers": ["@devframes/hub", "@devframes/hub-ui", "vite"] }, "sha512-GayTS7uZNfF+ZEoojxOGBELAfCTZnf/JYbtnu+FhzZriTdAEZZaGhbPLSUyo6zy1xhNnN6JR3sO+cP+B7FTgeg=="],
 
-    "@fable-org/fable-library-js": ["@fable-org/fable-library-js@2.5.1", "", {}, "sha512-dU9ehFhU9WgQQf0R8+NwfC6JMVy/TUOoFfMCkjEkD8VFa9LMCJzdzfz/1TIPi4L39s/Iqo71QfWPeCU3U7h1jA=="],
+    "@fable-org/fable-library-js": ["@fable-org/fable-library-js@2.6.0", "", {}, "sha512-HYpksOy+7rywyc+veOBMvBdm4HiWBOqTOc6SKxiPkZSQj8VPOfo1BrtrOR8S7iAUM+OYNrEHo8OIdPpKKNmfcw=="],
 
     "@json-render/core": ["@json-render/core@0.20.0", "", { "dependencies": { "zod": "^4.3.6" } }, "sha512-cXAXn7h3QaylefQgh85AEGPuVq4C8SJ3k9JqigWLJhaBSozF1Fmsrm43DP16RmkqNiVgj5pBRdmB48lEO5qlow=="],
 

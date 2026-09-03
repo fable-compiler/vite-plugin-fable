@@ -212,7 +212,12 @@ let publishProject (project : ProjectState) : unit =
         }
     )
 
-let publishInitialCompile (compiled : Map<FullPath, JavaScript>) (fromCache : Set<FullPath>) : unit =
+let publishInitialCompile
+    (compiled : Map<FullPath, JavaScript>)
+    (fromCache : Set<FullPath>)
+    (diagnostics : Diagnostic array)
+    : unit
+    =
     advance (fun s ->
         { s with
             Compile =
@@ -220,7 +225,7 @@ let publishInitialCompile (compiled : Map<FullPath, JavaScript>) (fromCache : Se
                     {
                         CompiledFiles = compiled
                         FromCache = fromCache
-                        Diagnostics = Array.empty
+                        Diagnostics = diagnostics
                         LastRequested = Array.empty
                         LastCompiledAt = DateTime.Now
                     }

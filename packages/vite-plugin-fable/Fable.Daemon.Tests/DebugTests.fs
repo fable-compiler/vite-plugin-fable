@@ -439,6 +439,25 @@ module WireTests =
                 }
             Severity = "Warning"
             FileName = "/project/Math.fs"
+            Tag = "FSHARP"
+        }
+
+    /// What Fable reports about a file that type-checks but that it cannot translate. It carries no
+    /// error number, which is why `ErrorNumberText` is empty rather than absent.
+    let private fableDiagnostic : Diagnostic =
+        {
+            ErrorNumberText = ""
+            Message = "Microsoft.FSharp.Control.FSharpAsync.RunSynchronously (static) is not supported by Fable"
+            Range =
+                {
+                    StartLine = 7
+                    StartColumn = 12
+                    EndLine = 7
+                    EndColumn = 41
+                }
+            Severity = "Error"
+            FileName = "/project/Math.fs"
+            Tag = "FABLE"
         }
 
     [<Test>]
@@ -458,7 +477,10 @@ module WireTests =
     [<Test>]
     let ``fable/initial-compile matches its fixture`` () =
         let response =
-            FilesCompiledResult.Success (Map.ofList [ "/project/Math.fs", "export const sum = 1;" ])
+            FilesCompiledResult.Success (
+                Map.ofList [ "/project/Math.fs", "export const sum = 1;" ],
+                [| fableDiagnostic |]
+            )
 
         Assert.That (
             normalize (serialize response),
@@ -468,7 +490,10 @@ module WireTests =
     [<Test>]
     let ``fable/compile matches its fixture`` () =
         let response =
-            FileChangedResult.Success (Map.ofList [ "/project/Math.fs", "export const sum = 2;" ], [| diagnostic |])
+            FileChangedResult.Success (
+                Map.ofList [ "/project/Math.fs", "export const sum = 2;" ],
+                [| diagnostic ; fableDiagnostic |]
+            )
 
         Assert.That (normalize (serialize response), Is.EqualTo (normalize (File.ReadAllText (fixture "compile.json"))))
 
@@ -529,6 +554,7 @@ module DebugServerTests =
                                 EndLine = 3
                                 EndColumn = 9
                             }
+                        Tag = "FSHARP"
                         Severity = "Warning"
                         FileName = mathFs
                     }
@@ -651,7 +677,33 @@ module DebugServerTests =
 
             Assert.That (files.RootElement.GetProperty("files").[0].GetProperty("compiled").GetBoolean(), Is.False)
 
-            Debug.publishInitialCompile (Map.ofList [ mathFs, "export const sum = 1;" ]) Set.empty
+            // A file that type-checks but that Fable cannot translate reports nothing to the
+            // type-check, so the compile is the only place its error can come from.
+            let fableError : Diagnostic =
+                {
+                    ErrorNumberText = ""
+                    Message = "Microsoft.FSharp.Control.FSharpAsync.RunSynchronously (static) is not supported by Fable"
+                    Range =
+                        {
+                            StartLine = 7
+                            StartColumn = 12
+                            EndLine = 7
+                            EndColumn = 41
+                        }
+                    Severity = "Error"
+                    FileName = mathFs
+                    Tag = "FABLE"
+                }
+
+            Debug.publishInitialCompile (Map.ofList [ mathFs, "export const sum = 1;" ]) Set.empty [| fableError |]
+
+            use! compileErrors = getJson client $"{baseUrl}/api/diagnostics?severity=error"
+            Assert.That (compileErrors.RootElement.GetProperty("count").GetInt32(), Is.EqualTo 1)
+
+            Assert.That (
+                compileErrors.RootElement.GetProperty("diagnostics").[0].GetProperty("source").GetString(),
+                Is.EqualTo "compile"
+            )
 
             use! compiled = getJson client $"{baseUrl}/api/files?path=Math.fs"
 

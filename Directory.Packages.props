@@ -8,7 +8,7 @@
     <PackageVersion Include="FSharp.Core" Version="10.1.203" />
     <PackageVersion Include="FSharp.SystemTextJson" Version="1.4.36" />
     <PackageVersion Include="StreamJsonRpc" Version="2.25.29" />
-    <PackageVersion Include="Fable.Compiler" Version="5.14.1" />
+    <PackageVersion Include="Fable.Compiler" Version="5.15.0" />
     <PackageVersion Include="Suave" Version="2.6.2" />
     <PackageVersion Include="protobuf-net" Version="3.2.30" />
     <!-- lock transitive dependencies -->

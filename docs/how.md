@@ -57,7 +57,7 @@ sequenceDiagram
     Plugin->>Daemon: fable/project-changed
     Daemon-->>Plugin: source files, diagnostics, MSBuild inputs
     Plugin->>Daemon: fable/initial-compile
-    Daemon-->>Plugin: JavaScript per F# file
+    Daemon-->>Plugin: JavaScript per F# file, and what Fable could not translate
     Vite->>Plugin: load (per .fs request)
 </div>
 
@@ -79,6 +79,18 @@ nothing should be bundled before the F# has compiled.
 and type-checks the project. `fable/initial-compile` then transpiles every source file. Both run
 inside the daemon on [Fable.Compiler](https://github.com/fable-compiler/Fable), the same code
 `dotnet fable` uses.
+
+Both steps report problems, and they are not the same problems. The type-check reports what the F#
+compiler found, `FS0025` and the like: code that does not compile. The compile reports what Fable
+found, which is code that compiles as F# but that Fable cannot turn into JavaScript, such as
+`Async.RunSynchronously`. Those carry no error number, so the plugin names them by their tag:
+
+```text
+  9:42:26 PM [vite] [fable] ERROR FABLE: Microsoft.FSharp.Control.FSharpAsync.RunSynchronously (static) is not supported by Fable Math.fs (6,26) (6,48)
+```
+
+Either kind fails `vite build`. In dev the server stays up and the error goes to the browser
+overlay, so the next edit can fix it.
 
 The daemon also reports which MSBuild files the project depends on. The plugin watches those, so a
 change to an `fsproj` or a `Directory.Build.props` triggers a full re-crack rather than an

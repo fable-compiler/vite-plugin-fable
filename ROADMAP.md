@@ -4,14 +4,12 @@ Nothing here is done. Items are deleted as they land, so what remains is open wo
 
 Item 1 is blocked upstream and can only be tracked and item 2 is on hold. Item 3 is a project, items 4 and 5 are smaller ones, item 6 records a rejected decision and item 7 is loose ends.
 
-References into `~/Projects/Fable` are against Fable 5.14, the version in the workspace catalog.
+References into `~/Projects/Fable` are against Fable 5.15, the version in the workspace catalog.
 
 ## 1. Blocked on Fable
 
-Neither of these can be fixed in this repo. Both need an upstream change first.
+This cannot be fixed in this repo. It needs an upstream change first.
 
-- **Fable's own errors never reach the plugin.** `CodeServices.compileMultipleFilesToJavaScript` fills `CompileResult.Diagnostics` from FCS's type-check results only, and discards the `CompilerImpl` holding `com.Logs` (`~/Projects/Fable/src/Fable.Compiler/Library.fs:223` upcasts it to the `Compiler` interface, where `Logs` does not exist). A file that type-checks but that Fable cannot translate therefore compiles to `return null` with no diagnostic at all: `vite build` prints nothing, exits 0, and the app breaks at runtime. Reproduced in `sample-project` with `Async.RunSynchronously`, and filed with a proposed direction as [fable-compiler/Fable#4922](https://github.com/fable-compiler/Fable/issues/4922).
-  There is a local half waiting on it: `FilesCompiledResult.Success` carries no diagnostics, so `tryCompileProject` has nowhere to put them and `failBuildOnErrors` would never see them.
 - **Real F# source maps.** `FileWriter.AddSourceMapping` in `src/Fable.Compiler/Library.fs:84-90` is a no-op with the `SourceMapSharp` generator commented out, so `CliArgs.SourceMaps` does nothing. The plugin returns `{ mappings: '' }`, which is honest about having no mapping, but a real F#-to-JS one needs the Fable change first. Not filed.
 
 ## 2. A Vite DevTools panel (on hold)
