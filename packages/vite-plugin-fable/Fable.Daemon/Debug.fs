@@ -121,6 +121,7 @@ type ProjectState =
         FableLibrary : FullPath
         Exclude : string list
         NoReflection : bool
+        Temporal : bool
         SourceFiles : FullPath array
         DependentFiles : FullPath array
         TargetFramework : string option
@@ -427,6 +428,7 @@ let projectPayload (includes : string) (project : ProjectState) =
         fableLibrary = project.FableLibrary
         exclude = project.Exclude
         noReflection = project.NoReflection
+        temporal = project.Temporal
         targetFramework = Option.toObj project.TargetFramework
         outputType = Option.toObj project.OutputType
         sourceFiles =

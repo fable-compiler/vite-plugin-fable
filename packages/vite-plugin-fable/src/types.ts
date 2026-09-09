@@ -60,6 +60,14 @@ export interface PluginOptions {
   jsx?: "transform" | "automatic" | null;
   /** Pass `noReflection` to Fable.Compiler. */
   noReflection?: boolean;
+  /**
+   * Compile `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly` and `TimeSpan` to the Temporal
+   * API instead of `Date`. Tick precision and DST-safe arithmetic, like .NET.
+   *
+   * Experimental in Fable, where it is the hidden `--test:js-temporal` flag. The plugin passes it
+   * through and does not add a polyfill; check that the browsers you target ship `Temporal`.
+   */
+  temporal?: boolean;
   /** Pass `exclude` to Fable.Compiler. */
   exclude?: string[];
   /**
@@ -170,6 +178,8 @@ export interface ProjectRequest {
   exclude: string[];
   /** Passed through to Fable.Compiler. */
   noReflection: boolean;
+  /** Passed through to Fable.Compiler as `jsTemporal`. */
+  temporal: boolean;
 }
 
 /** The result of compiling F# files, whether the whole project or the ones that changed. */

@@ -8,6 +8,7 @@ describe("resolveOptions", () => {
     expect(resolved).toEqual({
       jsx: null,
       noReflection: false,
+      temporal: false,
       exclude: [],
       debug: false,
       fableModulesDiagnostics: false,
@@ -18,11 +19,13 @@ describe("resolveOptions", () => {
     const resolved: ResolvedPluginOptions = resolveOptions({
       jsx: "automatic",
       noReflection: true,
+      temporal: true,
       exclude: ["Some.Plugin"],
       configuration: "Debug",
     });
     expect(resolved.jsx).toBe("automatic");
     expect(resolved.noReflection).toBe(true);
+    expect(resolved.temporal).toBe(true);
     expect(resolved.exclude).toEqual(["Some.Plugin"]);
     expect(resolved.configuration).toBe("Debug");
   });
@@ -36,7 +39,7 @@ describe("resolveOptions", () => {
 
   test("lists the known options for an unrecognisable key", () => {
     expect(() => resolveOptions({ wat: 1 } as unknown as PluginOptions)).toThrow(
-      /Known options: fsproj, jsx, noReflection, exclude, configuration, debug, fableModulesDiagnostics/,
+      /Known options: fsproj, jsx, noReflection, temporal, exclude, configuration, debug, fableModulesDiagnostics/,
     );
   });
 

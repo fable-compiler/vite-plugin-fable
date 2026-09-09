@@ -20,6 +20,8 @@ type ProjectChangedPayload =
         Exclude : string array
         /// Don't emit JavaScript reflection code.
         NoReflection : bool
+        /// Compile the .NET date and time types to the Temporal API instead of `Date`.
+        Temporal : bool
     }
 
 type DiagnosticRange =

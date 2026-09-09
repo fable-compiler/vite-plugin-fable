@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2026-09-09
 
+### Added
+
+- `temporal` option. Compiles the .NET date and time types to the Temporal API instead of `Date`, with tick precision and .NET's arithmetic across DST changes. It is Fable's experimental `--test:js-temporal` flag passed through, and the plugin adds no polyfill. Off by default, so existing output is unchanged. See [Temporal](https://fable.io/vite-plugin-fable/recipes.html#Temporal).
+
 ### Changed
 
 - Updated Fable.Compiler to 5.16.0 and `@fable-org/fable-library-js` to 2.7.0. Numeric formatting in the emitted JavaScript now matches .NET for the `G`, `E` and custom format strings, and `E` is accepted on `int64` and `uint64`.
