@@ -18,20 +18,21 @@ Every option the plugin accepts. All of them are optional.
 | `configuration`           | <code>"Debug" &#124; "Release"</code>                   | `Release` on build, `Debug` on dev | MSBuild configuration. See [Debug or Release](#Debug-or-Release).                                                                             |
 | `jsx`                     | <code>"automatic" &#124; "transform" &#124; null</code> | `null`                             | Transform JSX that Fable emitted. See [Fable.Core.JSX](#Fable-Core-JSX).                                                                      |
 | `noReflection`            | `boolean`                                               | `false`                            | Passed to Fable. Skips emitting reflection info, which produces smaller output.                                                               |
+| `temporal`                | `boolean`                                               | `false`                            | Passed to Fable. Compiles the .NET date and time types to the Temporal API instead of `Date`. See [Temporal](#Temporal).                      |
 | `exclude`                 | `string[]`                                              | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins.                                                               |
 | `debug`                   | `boolean`                                               | `false`                            | Print what the plugin is doing, and start the daemon's debug server. See [Seeing what the plugin is doing](#Seeing-what-the-plugin-is-doing). |
 | `fableModulesDiagnostics` | `boolean`                                               | `false`                            | Report diagnostics for files under `fable_modules`. See [Diagnostics from restored packages](#Diagnostics-from-restored-packages).            |
 
-`noReflection` and `exclude` are handed to Fable.Compiler unchanged; they mean what they mean for
-the `dotnet fable` CLI. Changing either invalidates the plugin's build caches, so you do not need
-to clear `obj/` yourself.
+`noReflection`, `temporal` and `exclude` are handed to Fable.Compiler unchanged; they mean what
+they mean for the `dotnet fable` CLI. Changing any of them invalidates the plugin's build caches,
+so you do not need to clear `obj/` yourself.
 
 Unknown or badly typed options are rejected when the config loads, so a misspelled one fails with
 a message rather than being quietly ignored:
 
 ```
 vite-plugin-fable: unknown option "noRefleciton". Did you mean "noReflection"?
-Known options: fsproj, jsx, noReflection, exclude, configuration, debug, fableModulesDiagnostics.
+Known options: fsproj, jsx, noReflection, temporal, exclude, configuration, debug, fableModulesDiagnostics.
 ```
 
 If you write your Vite config in TypeScript you get the same feedback in the editor. The plugin
@@ -58,6 +59,23 @@ The option covers errors as well as warnings. With it off, a package whose sourc
 takes the only signal with it: nothing is printed and `vite build` exits 0, even though Fable
 emitted nothing usable for that file. If a build succeeds and the app is broken in a way that
 points at a package, turn this on first.
+
+## Temporal
+
+Fable compiles `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly` and `TimeSpan` to JavaScript's
+`Date` by default, which is millisecond precise and does arithmetic across DST changes differently
+from .NET. Fable 5.16 can target the
+[Temporal API](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Temporal)
+instead, which is tick precise and matches .NET's wall-clock semantics:
+
+```js
+fable({ temporal: true });
+```
+
+It is experimental in Fable, where it is the hidden `--test:js-temporal` flag, and the plugin only
+passes it through. It sets the `FABLE_COMPILER_JAVASCRIPT_TEMPORAL` define as `dotnet fable` does,
+so F# code can branch on it. The plugin adds no polyfill: check that the browsers and runtimes you
+target ship `Temporal`, and load one yourself if they do not.
 
 ## Seeing what the plugin is doing
 

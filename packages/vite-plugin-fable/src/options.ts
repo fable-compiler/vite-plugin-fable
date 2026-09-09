@@ -3,6 +3,7 @@ import type { FableConfiguration, PluginOptions, ResolvedPluginOptions } from ".
 const defaults: ResolvedPluginOptions = {
   jsx: null,
   noReflection: false,
+  temporal: false,
   exclude: [],
   // The env var is the switch you can flip without editing a config.
   debug: isTruthy(process.env.VITE_PLUGIN_FABLE_DEBUG),
@@ -21,6 +22,7 @@ const knownKeys: ReadonlyArray<keyof PluginOptions> = [
   "fsproj",
   "jsx",
   "noReflection",
+  "temporal",
   "exclude",
   "configuration",
   "debug",
@@ -79,8 +81,16 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
     }
   }
 
-  const { fsproj, jsx, noReflection, exclude, configuration, debug, fableModulesDiagnostics } =
-    userConfig;
+  const {
+    fsproj,
+    jsx,
+    noReflection,
+    temporal,
+    exclude,
+    configuration,
+    debug,
+    fableModulesDiagnostics,
+  } = userConfig;
 
   if (fsproj !== undefined && typeof fsproj !== "string") {
     fail(`"fsproj" must be a path, got ${typeof fsproj}.`);
@@ -99,6 +109,9 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
   }
   if (noReflection !== undefined && typeof noReflection !== "boolean") {
     fail(`"noReflection" must be a boolean, got ${typeof noReflection}.`);
+  }
+  if (temporal !== undefined && typeof temporal !== "boolean") {
+    fail(`"temporal" must be a boolean, got ${typeof temporal}.`);
   }
   if (debug !== undefined && typeof debug !== "boolean") {
     fail(`"debug" must be a boolean, got ${typeof debug}.`);
@@ -123,6 +136,7 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
     ...(fsproj === undefined ? {} : { fsproj }),
     ...(jsx === undefined ? {} : { jsx }),
     ...(noReflection === undefined ? {} : { noReflection }),
+    ...(temporal === undefined ? {} : { temporal }),
     ...(debug === undefined ? {} : { debug }),
     ...(fableModulesDiagnostics === undefined ? {} : { fableModulesDiagnostics }),
     ...(exclude === undefined ? {} : { exclude }),

@@ -8,25 +8,15 @@ open System.Collections.Concurrent
 open System.IO
 open System.Net
 open System.Threading
+open System.Threading.Tasks
 open Suave
 open Suave.Filters
 open Suave.Operators
 open Suave.Successful
-open Suave.Logging
-open Suave.Sockets
-open Suave.Sockets.Control
 open Suave.WebSocket
 open Microsoft.Extensions.Logging
 
 let defaultPort = 9014us
-
-/// We can't log anything to the stdout!
-let zeroSuaveLogger : Logger =
-    { new Logger with
-        member x.log level _ = ()
-        member x.logWithAck _ _ = async.Zero ()
-        member x.name = [| "vite-plugin-fable" |]
-    }
 
 /// Next to the assembly rather than `__SOURCE_DIRECTORY__`, which bakes in the path the daemon was
 /// compiled in. That was the same folder while the daemon was built on the machine that ran it, and
@@ -76,11 +66,11 @@ type InMemoryLogger() =
                 |> Seq.skip currentCount
                 |> HTML.mapLogEntriesToListItems
                 |> Encoding.UTF8.GetBytes
-                |> ByteSegment
+                |> Memory<byte>
 
-            client.send Text messages true //
-            |> Async.Ignore
-            |> Async.RunSynchronously
+            // Suave 3 hands back a ValueTask<Result<_, _>>; a failed send only means the client is
+            // gone, and the read loop in `ws` drops it on its next turn.
+            (client.send Text messages true).AsTask().GetAwaiter().GetResult() |> ignore
 
             connectedClients.[client] <- entries.Count
 
@@ -131,6 +121,7 @@ type ProjectState =
         FableLibrary : FullPath
         Exclude : string list
         NoReflection : bool
+        Temporal : bool
         SourceFiles : FullPath array
         DependentFiles : FullPath array
         TargetFramework : string option
@@ -437,6 +428,7 @@ let projectPayload (includes : string) (project : ProjectState) =
         fableLibrary = project.FableLibrary
         exclude = project.Exclude
         noReflection = project.NoReflection
+        temporal = project.Temporal
         targetFramework = Option.toObj project.TargetFramework
         outputType = Option.toObj project.OutputType
         sourceFiles =
@@ -714,25 +706,40 @@ let api (logger : InMemoryLogger) (port : uint16) : WebPart =
             )
         ]
 
-let ws (logger : InMemoryLogger) (webSocket : WebSocket) (context : HttpContext) =
-    context.runtime.logger.info (Message.eventX $"New websocket connection")
+let ws
+    (logger : InMemoryLogger)
+    (webSocket : WebSocket)
+    (_context : HttpContext)
+    : ValueTask<Result<unit, Suave.Sockets.Error>>
+    =
     connectedClients.TryAdd (webSocket, logger.Count) |> ignore
 
-    socket {
-        let mutable loop = true
+    let loop =
+        task {
+            let mutable result = Result.Ok ()
+            let mutable loop = true
 
-        while loop do
-            let! msg = webSocket.read ()
+            while loop do
+                let! msg = webSocket.read ()
 
-            match msg with
-            | Close, _, _ ->
-                connectedClients.TryRemove webSocket |> ignore
-                let emptyResponse = [||] |> ByteSegment
-                do! webSocket.send Close emptyResponse true
-                loop <- false
+                match msg with
+                | Result.Ok (Close, _, _) ->
+                    connectedClients.TryRemove webSocket |> ignore
+                    let! closed = webSocket.send Close Memory<byte>.Empty true
+                    result <- closed
+                    loop <- false
 
-            | _ -> ()
-    }
+                | Result.Ok _ -> ()
+
+                | Result.Error err ->
+                    connectedClients.TryRemove webSocket |> ignore
+                    result <- Result.Error err
+                    loop <- false
+
+            return result
+        }
+
+    ValueTask<Result<unit, Suave.Sockets.Error>> loop
 
 let webApp (logger : InMemoryLogger) (port : uint16) : WebPart =
     let allLogs ctx =
@@ -816,7 +823,6 @@ let startWebserver (logger : InMemoryLogger) (port : uint16) (cancellationToken 
         { defaultConfig with
             cancellationToken = cancellationToken
             homeFolder = Some homeFolder
-            logger = zeroSuaveLogger
             bindings = [ HttpBinding.create HTTP IPAddress.Loopback port ]
         }
 
@@ -826,4 +832,4 @@ let startWebserver (logger : InMemoryLogger) (port : uint16) (cancellationToken 
     serverEnabled <- true
     writeDiscoveryFile port cancellationToken
     let _listening, server = startWebServerAsync conf (webApp logger port)
-    server
+    Async.AwaitTask server

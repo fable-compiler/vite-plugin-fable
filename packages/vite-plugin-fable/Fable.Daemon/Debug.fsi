@@ -23,6 +23,7 @@ type ProjectState =
         FableLibrary : FullPath
         Exclude : string list
         NoReflection : bool
+        Temporal : bool
         /// Every source file, in compilation order.
         SourceFiles : FullPath array
         /// The MSBuild inputs a change to which forces a re-crack.

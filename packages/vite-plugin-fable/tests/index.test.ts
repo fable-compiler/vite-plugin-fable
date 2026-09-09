@@ -347,10 +347,11 @@ describe("configResolved", () => {
   });
 
   test("passes the Fable options through to the daemon", async () => {
-    const h: Harness = harness({ noReflection: true, exclude: ["Foo.Bar"] });
+    const h: Harness = harness({ noReflection: true, temporal: true, exclude: ["Foo.Bar"] });
     await h.start();
     const request: ProjectRequest = h.daemon.projectChangedCalls[0];
     expect(request.noReflection).toBe(true);
+    expect(request.temporal).toBe(true);
     expect(request.exclude).toEqual(["Foo.Bar"]);
   });
 });

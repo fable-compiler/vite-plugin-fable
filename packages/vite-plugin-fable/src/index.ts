@@ -163,6 +163,7 @@ export function createFablePlugin(
       fableLibrary,
       exclude: state.config.exclude,
       noReflection: state.config.noReflection,
+      temporal: state.config.temporal,
     });
   }
 

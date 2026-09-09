@@ -22,6 +22,7 @@ let sampleApp =
         Configuration = "Release"
         Exclude = Array.empty
         NoReflection = false
+        Temporal = false
     }
 
 let telplin =
@@ -31,6 +32,7 @@ let telplin =
         Configuration = "Debug"
         Exclude = Array.empty
         NoReflection = false
+        Temporal = false
     }
 
 let fantomasTools =
@@ -44,6 +46,7 @@ let fantomasTools =
         Configuration = "Debug"
         Exclude = Array.empty
         NoReflection = false
+        Temporal = false
     }
 
 // let ronnies =
@@ -53,6 +56,7 @@ let fantomasTools =
 //         Configuration = "Debug"
 //         Exclude = [| "Nojaf.Fable.React.Plugin" |]
 //         NoReflection = true
+//         Temporal = false
 //     }
 
 [<Test>]
@@ -147,7 +151,7 @@ let ``a failing dotnet msbuild call reports what MSBuild said`` () =
         let! finished = Task.WhenAny (run :> Task, Task.Delay (TimeSpan.FromMinutes 2.))
         Assert.That (finished, Is.SameAs (run :> Task), "dotnet msbuild never came back")
 
-        let error = Assert.Throws<AggregateException>(fun () -> run.Wait ())
+        let error = Assert.Throws<AggregateException>(Action (fun () -> run.Wait ()))
 
         Assert.That (
             error.InnerException.Message,
@@ -390,6 +394,22 @@ module CacheKeyTests =
         | Error reason -> Assert.Fail $"expected the cache to be reusable, got %A{reason}"
 
     [<Test>]
+    let ``turning on temporal invalidates the cache`` () =
+        // The option has no field in the cache; it rides on the define `dotnet fable` sets for it.
+        Caching.writeDesignTimeBuild (mkKey [] false) emptyResponse
+
+        let withTemporal =
+            { mkKey [] false with
+                Defines = Set.ofList [ "FABLE_COMPILER" ; "FABLE_COMPILER_JAVASCRIPT_TEMPORAL" ]
+            }
+
+        match Caching.canReuseDesignTimeBuildCache withTemporal with
+        | Error (Caching.InvalidCacheReason.DefinesMismatch (cached, current)) ->
+            Assert.That (current, Does.Contain "FABLE_COMPILER_JAVASCRIPT_TEMPORAL")
+            Assert.That (cached, Does.Not.Contain "FABLE_COMPILER_JAVASCRIPT_TEMPORAL")
+        | other -> Assert.Fail $"expected a defines mismatch, got %A{other}"
+
+    [<Test>]
     let ``changing noReflection invalidates the cache`` () =
         Caching.writeDesignTimeBuild (mkKey [] false) emptyResponse
 
@@ -536,6 +556,7 @@ module DebugServerTests =
             FableLibrary = fableLibrary
             Exclude = []
             NoReflection = false
+            Temporal = false
             SourceFiles = [| mathFs ; libraryFs |]
             DependentFiles = [| Path.CombineNormalize (sampleProjectDir, "App.fsproj") |]
             TargetFramework = Some "net10.0"

@@ -143,7 +143,17 @@ let tryTypeCheckProject
                                 TypedArrays = false
                                 ClampByteArrays = false
                                 Language = Language.JavaScript
-                                Define = [ "FABLE_COMPILER" ; "FABLE_COMPILER_4" ; "FABLE_COMPILER_JAVASCRIPT" ]
+                                Define =
+                                    [
+                                        "FABLE_COMPILER"
+                                        "FABLE_COMPILER_4"
+                                        "FABLE_COMPILER_JAVASCRIPT"
+                                        // The define is what `dotnet fable` sets alongside the flag, and it is
+                                        // part of the design time build cache key, so flipping the option
+                                        // invalidates the cache without a field of its own.
+                                        if payload.Temporal then
+                                            "FABLE_COMPILER_JAVASCRIPT_TEMPORAL"
+                                    ]
                                 DebugMode = false
                                 OptimizeFSharpAst = false
                                 Verbosity = Verbosity.Verbose
@@ -151,6 +161,7 @@ let tryTypeCheckProject
                                 FileExtension = ".fs"
                                 TriggeredByDependency = false
                                 NoReflection = payload.NoReflection
+                                JsTemporal = payload.Temporal
                             }
                         RunProcess = None
                         Verbosity = Verbosity.Verbose
@@ -310,6 +321,7 @@ let private describeProject
         FableLibrary = payload.FableLibrary
         Exclude = List.ofArray payload.Exclude
         NoReflection = payload.NoReflection
+        Temporal = payload.Temporal
         SourceFiles = result.CrackerResponse.ProjectOptions.SourceFiles
         DependentFiles = result.DependentFiles
         TargetFramework = result.CrackerResponse.TargetFramework

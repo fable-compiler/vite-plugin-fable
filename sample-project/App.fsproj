@@ -8,10 +8,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Fable.Browser.Dom" Version="2.14.0" />
-        <PackageReference Include="Fable.Core" Version="4.3.0" />
+        <PackageReference Include="Fable.Browser.Dom" Version="2.20.0" />
+        <PackageReference Include="Fable.Core" Version="5.2.0" />
         <PackageReference Include="Nojaf.Fable.React" Version="0.0.2" />
-        <PackageReference Include="Thoth.Json" Version="10.2.0" />
+        <PackageReference Include="Thoth.Json" Version="10.5.1" />
     </ItemGroup>
 
     <ItemGroup>
