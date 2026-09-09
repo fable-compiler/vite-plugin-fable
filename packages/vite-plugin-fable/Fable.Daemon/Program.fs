@@ -151,6 +151,8 @@ let tryTypeCheckProject
                                 FileExtension = ".fs"
                                 TriggeredByDependency = false
                                 NoReflection = payload.NoReflection
+                                // Keep Fable's default: compile System.DateTime & co. to `Date`, not the Temporal API.
+                                JsTemporal = false
                             }
                         RunProcess = None
                         Verbosity = Verbosity.Verbose

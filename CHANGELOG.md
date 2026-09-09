@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
+## [0.5.0] - 2026-09-09
+
+### Changed
+
+- Updated Fable.Compiler to 5.16.0 and `@fable-org/fable-library-js` to 2.7.0. Numeric formatting in the emitted JavaScript now matches .NET for the `G`, `E` and custom format strings, and `E` is accepted on `int64` and `uint64`.
+
 ## [0.4.0] - 2026-09-03
 
 ### Fixed

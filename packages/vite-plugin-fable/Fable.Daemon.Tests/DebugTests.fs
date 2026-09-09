@@ -147,7 +147,7 @@ let ``a failing dotnet msbuild call reports what MSBuild said`` () =
         let! finished = Task.WhenAny (run :> Task, Task.Delay (TimeSpan.FromMinutes 2.))
         Assert.That (finished, Is.SameAs (run :> Task), "dotnet msbuild never came back")
 
-        let error = Assert.Throws<AggregateException>(fun () -> run.Wait ())
+        let error = Assert.Throws<AggregateException>(Action (fun () -> run.Wait ()))
 
         Assert.That (
             error.InnerException.Message,
