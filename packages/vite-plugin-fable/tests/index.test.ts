@@ -1105,9 +1105,8 @@ describe("a dev server closed before a build in the same process", () => {
     const daemons: StubDaemon[] = [devDaemon, buildDaemon];
     // Deliberately not the harness: it hands every `openDaemon` the same stub, and this scenario
     // is about the second daemon not inheriting the first one's fate.
-    const plugin: Plugin = createFablePlugin(
-      { fsproj: appFsproj },
-      (): StubDaemon => daemons.shift()!,
+    const plugin: Plugin = createFablePlugin({ fsproj: appFsproj }, (): StubDaemon =>
+      daemons.shift()!,
     );
     const context: PluginContextStub = {
       addWatchFile: (): void => {},
