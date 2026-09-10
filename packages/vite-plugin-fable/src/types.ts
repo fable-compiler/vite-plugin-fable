@@ -210,6 +210,12 @@ export interface FableDaemon {
   initialCompile(): Promise<CompileResult>;
   /** Recompiles the given files and whatever depends on them. */
   compile(files: string[]): Promise<CompileResult>;
-  /** Stops the daemon. Safe to call more than once. */
+  /**
+   * Stops the daemon. Safe to call more than once.
+   *
+   * Requests still in flight reject with `DaemonDisposedError` rather than staying pending: a
+   * host can dispose mid-compile (close a dev server, then build, in one process), and a promise
+   * that never settles hangs everything awaiting it.
+   */
   dispose(): void;
 }

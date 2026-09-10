@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
+## [0.5.1] - 2026-09-10
+
+### Fixed
+
+- A build no longer hangs when the host opens and closes a Vite dev server before building in the same process, which Astro does for its content sync step. Closing the server disposed the daemon while the initial project crack was still in flight, and the request it left behind never settled; every `load` in the builds that followed awaited that stale promise, so `astro build` went idle after the compile and never exited. Disposing the daemon now rejects whatever is in flight, the plugin treats that as a compile abandoned by shutdown rather than a failed one (so a normal close prints no error), and a build resets what a dev server left behind instead of awaiting its fate. ([#70](https://github.com/fable-compiler/vite-plugin-fable/issues/70))
+- The `debug` option no longer takes the whole Vite process down. Suave printed its "Smooth! ... listener started" banner straight to stdout, which is the JSON-RPC channel, so the first daemon response arrived with the banner glued in front of its `Content-Length` header and the stream reader threw. Suave 3.5.0 added a `hideStartupMessage` flag for exactly this; the daemon updates to it and turns the banner off, so nothing but JSON-RPC frames reach stdout. ([#71](https://github.com/fable-compiler/vite-plugin-fable/issues/71))
+
 ## [0.5.0] - 2026-09-09
 
 ### Added

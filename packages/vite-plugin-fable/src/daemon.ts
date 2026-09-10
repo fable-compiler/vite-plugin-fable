@@ -14,6 +14,19 @@ import type {
   ProjectRequest,
 } from "./types.js";
 
+/**
+ * How a request still in flight settles when {@link FableDaemon.dispose} runs: the daemon was
+ * closed under it, so there was nothing wrong with the request and there will never be a reply.
+ * A separate type because the plugin treats this differently from a crash: the compile was
+ * abandoned, not failed.
+ */
+export class DaemonDisposedError extends Error {
+  constructor() {
+    super("The Fable daemon was disposed before it replied.");
+    this.name = "DaemonDisposedError";
+  }
+}
+
 const currentDir: string = path.dirname(fileURLToPath(import.meta.url));
 
 // The plugin is emitted to `dist/`, the daemon is published to `bin/` at the package root.
@@ -67,11 +80,14 @@ export function startDaemon(logger: DaemonLogger, options: DaemonOptions): Fable
   });
 
   /**
-   * Rejects once the daemon fails to start or exits unexpectedly. Raced against every request so a
-   * dead daemon surfaces an error instead of leaving the caller awaiting a reply that never comes.
+   * Rejects once the daemon fails to start, exits unexpectedly, or is disposed. Raced against every
+   * request so a dead daemon surfaces an error instead of leaving the caller awaiting a reply that
+   * never comes.
    */
+  let rejectFailed!: (reason: Error) => void;
   const failed: Promise<never> = new Promise<never>(
     (_resolve: unknown, reject: (reason: Error) => void) => {
+      rejectFailed = reject;
       dotnetProcess.once("error", (error: Error) => {
         reject(new Error(describeStartFailure(`Could not spawn \`dotnet\`: ${error.message}`)));
       });
@@ -92,7 +108,7 @@ export function startDaemon(logger: DaemonLogger, options: DaemonOptions): Fable
 
   async function send(method: string, params?: unknown): Promise<unknown> {
     if (disposed) {
-      throw new Error("The Fable daemon is not running.");
+      throw new DaemonDisposedError();
     }
     return Promise.race([endpoint.send(method, params) as Promise<unknown>, failed]);
   }
@@ -113,6 +129,12 @@ export function startDaemon(logger: DaemonLogger, options: DaemonOptions): Fable
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      // Settle whatever is still in flight. Killing the child does not: the `exit` handler above
+      // deliberately stays quiet once `disposed` is set, so without this a request racing `failed`
+      // would await a reply that will never come. A host that opens and closes a dev server before
+      // building in the same process (Astro's content sync) disposes mid-crack every time, and the
+      // pending promise it left behind used to hang the build that followed (#70).
+      rejectFailed(new DaemonDisposedError());
       dotnetProcess.kill();
     },
   };

@@ -1086,3 +1086,71 @@ describe("buildEnd", () => {
     expect(h.daemon.disposeCalls).toBe(1);
   });
 });
+
+describe("a dev server closed before a build in the same process", () => {
+  // Astro's content sync opens a Vite dev server, closes it, and then runs its builds, all in one
+  // process with the same plugin instance. Closing the server disposes the daemon while the
+  // initial crack is still in flight; the promise that crack left behind used to stay pending
+  // forever, and every `load` in the build that followed awaited it (#70).
+
+  test("the build compiles and serves for itself instead of hanging", async () => {
+    const devDaemon: StubDaemon = createStubDaemon({
+      sourceFiles: [mathFs],
+      compiled: { [mathFs]: "export const fromDev = 1;" },
+    });
+    const buildDaemon: StubDaemon = createStubDaemon({
+      sourceFiles: [mathFs],
+      compiled: { [mathFs]: "export const fromBuild = 1;" },
+    });
+    const daemons: StubDaemon[] = [devDaemon, buildDaemon];
+    // Deliberately not the harness: it hands every `openDaemon` the same stub, and this scenario
+    // is about the second daemon not inheriting the first one's fate.
+    const plugin: Plugin = createFablePlugin({ fsproj: appFsproj }, (): StubDaemon =>
+      daemons.shift()!,
+    );
+    const context: PluginContextStub = {
+      addWatchFile: (): void => {},
+      error: (message: string): never => {
+        throw new Error(message);
+      },
+    };
+
+    // The dev server boots and its crack is still running...
+    devDaemon.blockNextProjectChange();
+    await (plugin.configResolved as any).call(context, resolvedConfig());
+    (plugin.configureServer as any).call(context, {
+      config: { root: sampleProject },
+      watcher: { add: (): void => {} },
+    });
+    await (plugin.buildStart as any).call(context, {});
+    await afterCoalescing();
+    // ...when the host closes it.
+    (plugin.buildEnd as any).call({});
+    expect(devDaemon.disposeCalls).toBe(1);
+
+    // The build that follows must not await the dev server's fate; it compiles for itself.
+    await (plugin.configResolved as any).call(context, buildConfig());
+    await (plugin.buildStart as any).call(context, {});
+    const result: LoadOutput = await (plugin.load as any).handler.call(context, mathFs);
+    expect(result?.code).toBe("export const fromBuild = 1;");
+    expect(buildDaemon.initialCompileCalls).toBe(1);
+  });
+
+  test("closing mid-crack is a shutdown, not a compile error", async () => {
+    const lines: string[] = [];
+    const h: Harness = harness(
+      {},
+      { sourceFiles: [mathFs], compiled: { [mathFs]: "const v = 1;" } },
+    );
+    h.daemon.blockNextProjectChange();
+    await h.boot(recordingConfig(lines));
+    await afterCoalescing();
+
+    (h.plugin.buildEnd as any).call({});
+    await afterCoalescing();
+
+    // The abandoned compile settled quietly; a red "could not compile" over a normal shutdown
+    // would send someone hunting for an F# error that does not exist.
+    expect(lines.join("\n")).not.toContain("could not compile");
+  });
+});
