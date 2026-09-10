@@ -1,3 +1,4 @@
+import { DaemonDisposedError } from "../src/daemon.js";
 import type {
   CompileResult,
   Diagnostic,
@@ -59,6 +60,8 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
   const compileCalls: string[][] = [];
   let initialCompileCalls = 0;
   let disposeCalls = 0;
+  let disposed = false;
+  const disposeRejects: Array<(error: Error) => void> = [];
   let failure: Error | null = null;
   let blocked: Promise<void> | null = null;
   let blockedProjectChange: Promise<void> | null = null;
@@ -67,7 +70,22 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
   let compileDiagnostics: Diagnostic[] = [];
 
   function guard(): void {
+    if (disposed) throw new DaemonDisposedError();
     if (failure) throw failure;
+  }
+
+  /**
+   * Holds a blocked call open until its gate releases it, unless `dispose` runs first. The real
+   * daemon rejects whatever is in flight when it is disposed, and a stub that kept the promise
+   * pending instead would agree with the hang the plugin no longer has.
+   */
+  function gatedBy(gate: Promise<void>): Promise<void> {
+    return Promise.race([
+      gate,
+      new Promise<never>((_resolve: unknown, reject: (error: Error) => void) => {
+        disposeRejects.push(reject);
+      }),
+    ]);
   }
 
   const stub: StubDaemon = {
@@ -116,7 +134,7 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
       if (blockedProjectChange) {
         const gate: Promise<void> = blockedProjectChange;
         blockedProjectChange = null;
-        await gate;
+        await gatedBy(gate);
       }
       return {
         sourceFiles: options.sourceFiles ?? [],
@@ -155,13 +173,16 @@ export function createStubDaemon(options: StubDaemonOptions = {}): StubDaemon {
       if (blocked) {
         const gate: Promise<void> = blocked;
         blocked = null;
-        await gate;
+        await gatedBy(gate);
       }
       return { compiledFiles, diagnostics };
     },
 
     dispose(): void {
       disposeCalls += 1;
+      disposed = true;
+      for (const reject of disposeRejects) reject(new DaemonDisposedError());
+      disposeRejects.length = 0;
     },
   };
 

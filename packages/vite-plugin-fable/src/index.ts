@@ -14,7 +14,7 @@ import type {
 import colors from "picocolors";
 import { makeIdFiltersToMatchWithQuery } from "@rolldown/pluginutils";
 import { codeFrameColumns } from "@babel/code-frame";
-import { startDaemon } from "./daemon.js";
+import { DaemonDisposedError, startDaemon } from "./daemon.js";
 import { resolveOptions } from "./options.js";
 import type {
   BatchResult,
@@ -272,6 +272,10 @@ export function createFablePlugin(
     addWatchFile: (id: string) => void,
     projectFiles: Set<string>,
   ): Promise<void> {
+    // Captured now rather than read in the catch: a host can close a dev server and start a build
+    // in the same process, and the failure of a compile that server abandoned can arrive after
+    // `configResolved` has already flipped `state.isBuild` for the build.
+    const isBuild: boolean = state.isBuild;
     try {
       logDebug("projectChanged", Array.from(projectFiles).map(short).join(", "));
       state.sourceFiles.clear();
@@ -280,10 +284,17 @@ export function createFablePlugin(
       projectFailure = null;
       await compileProject(addWatchFile);
     } catch (e) {
+      // The daemon was closed under this compile: the host shut the dev server down mid-crack
+      // (Astro's content sync does exactly that before building). The compile was abandoned, not
+      // failed, so a red error here would be noise over a normal shutdown.
+      if (e instanceof DaemonDisposedError && !isBuild) {
+        logDebug("projectChanged", "abandoned, the daemon was disposed");
+        return;
+      }
       projectFailure = e instanceof Error ? e : new Error(String(e));
       logError(`could not compile ${Array.from(projectFiles).map(short).join(", ")}:\n${e}`);
       // A dev server keeps running so the next edit can fix it; a build must not exit 0.
-      if (state.isBuild) throw e;
+      if (isBuild) throw e;
     }
   }
 
@@ -315,7 +326,11 @@ export function createFablePlugin(
       logInfo(`compiled ${files.map(short).join(", ")} in ${since(started)}`);
       return { diagnostics, changedFiles, projectChanged: false };
     } catch (e) {
-      logError(`could not compile ${files.map(short).join(", ")}:\n${e}`);
+      if (e instanceof DaemonDisposedError) {
+        logDebug("fsharpFileChanged", "abandoned, the daemon was disposed");
+      } else {
+        logError(`could not compile ${files.map(short).join(", ")}:\n${e}`);
+      }
       return { diagnostics: [], changedFiles: [], projectChanged: false };
     }
   }
@@ -649,6 +664,12 @@ export function createFablePlugin(
       // A dev server starts the daemon in `configureServer`; this is the build path, where
       // blocking is right — nothing should be bundled before the F# is compiled.
       if (!state.isBuild) return;
+      // A host like Astro can open a dev server (`configureServer` starts a crack) and close it
+      // (`buildEnd` disposes the daemon) before that crack settles. Disposing settles it, but
+      // however that server's compile ended is that server's business: this build compiles for
+      // itself below, and `load` must not await or report anything left over from it.
+      ready = Promise.resolve();
+      projectFailure = null;
       try {
         addWatchFile = this.addWatchFile.bind(this);
         openDaemon();

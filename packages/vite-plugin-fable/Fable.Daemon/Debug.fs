@@ -823,6 +823,10 @@ let startWebserver (logger : InMemoryLogger) (port : uint16) (cancellationToken 
         { defaultConfig with
             cancellationToken = cancellationToken
             homeFolder = Some homeFolder
+            // The banner is a bare `Console.WriteLine`, and stdout is the JSON-RPC channel: one
+            // "Smooth! Suave ... listener started" in front of a Content-Length header kills the
+            // whole Vite process (#71). This flag is why Suave 3.5.0 is the floor.
+            hideStartupMessage = true
             bindings = [ HttpBinding.create HTTP IPAddress.Loopback port ]
         }
 
