@@ -7,6 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- FCS ships as IL, and the tiered JIT otherwise keeps it at tier 0 for most of the first
+         type-check. Costs no memory; the server GC half of fable-compiler/Fable#5073 does, so that
+         one is the `serverGC` plugin option instead. -->
+    <RuntimeHostConfigurationOption Include="System.Runtime.TieredCompilation.CallCountingDelayMs" Value="0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="Types.fs" />
     <Compile Include="MSBuild.fsi" />
     <Compile Include="MSBuild.fs" />

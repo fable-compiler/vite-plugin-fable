@@ -8,6 +8,7 @@ const defaults: ResolvedPluginOptions = {
   // The env var is the switch you can flip without editing a config.
   debug: isTruthy(process.env.VITE_PLUGIN_FABLE_DEBUG),
   fableModulesDiagnostics: false,
+  serverGC: false,
 };
 
 function isTruthy(value: string | undefined): boolean {
@@ -27,6 +28,7 @@ const knownKeys: ReadonlyArray<keyof PluginOptions> = [
   "configuration",
   "debug",
   "fableModulesDiagnostics",
+  "serverGC",
 ];
 
 function fail(message: string): never {
@@ -90,6 +92,7 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
     configuration,
     debug,
     fableModulesDiagnostics,
+    serverGC,
   } = userConfig;
 
   if (fsproj !== undefined && typeof fsproj !== "string") {
@@ -119,6 +122,9 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
   if (fableModulesDiagnostics !== undefined && typeof fableModulesDiagnostics !== "boolean") {
     fail(`"fableModulesDiagnostics" must be a boolean, got ${typeof fableModulesDiagnostics}.`);
   }
+  if (serverGC !== undefined && typeof serverGC !== "boolean") {
+    fail(`"serverGC" must be a boolean, got ${typeof serverGC}.`);
+  }
   if (
     exclude !== undefined &&
     (!Array.isArray(exclude) || exclude.some((e: unknown): boolean => typeof e !== "string"))
@@ -139,6 +145,7 @@ export function resolveOptions(userConfig: PluginOptions | undefined): ResolvedP
     ...(temporal === undefined ? {} : { temporal }),
     ...(debug === undefined ? {} : { debug }),
     ...(fableModulesDiagnostics === undefined ? {} : { fableModulesDiagnostics }),
+    ...(serverGC === undefined ? {} : { serverGC }),
     ...(exclude === undefined ? {} : { exclude }),
     ...(configuration === undefined ? {} : { configuration: configuration as FableConfiguration }),
   };

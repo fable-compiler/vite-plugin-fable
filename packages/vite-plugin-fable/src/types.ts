@@ -93,6 +93,14 @@ export interface PluginOptions {
    */
   fableModulesDiagnostics?: boolean;
   /**
+   * Run the daemon with .NET's server garbage collector, trading memory for speed.
+   *
+   * Recompiles after an edit get more than twice as fast, and the first type-check a little faster
+   * too. The daemon holds about 100 MB more between edits and peaks a few hundred MB higher while
+   * compiling, and both grow with the number of cores. Off by default.
+   */
+  serverGC?: boolean;
+  /**
    * The MSBuild configuration to compile with.
    *
    * Defaults to `Release` for `vite build` and `Debug` for `vite dev`, whatever `--mode` says:
@@ -164,6 +172,11 @@ export interface DaemonOptions {
    * variable to the child process rather than as an argument.
    */
   debug: boolean;
+  /**
+   * Run the daemon with server GC. A runtime setting, so it is passed as environment variables
+   * to the child process: the runtime reads them once, when the daemon starts.
+   */
+  serverGC: boolean;
 }
 
 /** The payload of a `fable/project-changed` request. */

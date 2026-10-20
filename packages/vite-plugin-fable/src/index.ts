@@ -546,7 +546,7 @@ export function createFablePlugin(
         info: (message: string): void => logDebug("daemon", message),
         error: (message: string): void => logError(`daemon: ${message}`),
       },
-      { debug: state.config.debug },
+      { debug: state.config.debug, serverGC: state.config.serverGC },
     );
     process.once("SIGINT", onSigint);
   }

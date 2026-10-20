@@ -12,6 +12,7 @@ describe("resolveOptions", () => {
       exclude: [],
       debug: false,
       fableModulesDiagnostics: false,
+      serverGC: false,
     });
   });
 
@@ -39,7 +40,7 @@ describe("resolveOptions", () => {
 
   test("lists the known options for an unrecognisable key", () => {
     expect(() => resolveOptions({ wat: 1 } as unknown as PluginOptions)).toThrow(
-      /Known options: fsproj, jsx, noReflection, temporal, exclude, configuration, debug, fableModulesDiagnostics/,
+      /Known options: fsproj, jsx, noReflection, temporal, exclude, configuration, debug, fableModulesDiagnostics, serverGC/,
     );
   });
 
@@ -76,6 +77,12 @@ describe("resolveOptions", () => {
     expect(() =>
       resolveOptions({ fableModulesDiagnostics: "yes" } as unknown as PluginOptions),
     ).toThrow(/"fableModulesDiagnostics" must be a boolean, got string/);
+  });
+
+  test("rejects a non-boolean serverGC", () => {
+    expect(() => resolveOptions({ serverGC: "yes" } as unknown as PluginOptions)).toThrow(
+      /"serverGC" must be a boolean, got string/,
+    );
   });
 
   test("rejects a non-object", () => {
