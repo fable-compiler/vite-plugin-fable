@@ -570,7 +570,7 @@ describe("daemon debug server", () => {
   test("stays off by default", async () => {
     const h: Harness = harness({}, project);
     await h.start();
-    expect(h.daemonOptions.value).toEqual({ debug: false });
+    expect(h.daemonOptions.value).toEqual({ debug: false, serverGC: false });
   });
 
   test("starts when the debug option is on", async () => {
@@ -578,12 +578,25 @@ describe("daemon debug server", () => {
     // endpoints could not be reached without also setting VITE_PLUGIN_FABLE_DEBUG.
     const h: Harness = harness({ debug: true }, project);
     await h.start();
-    expect(h.daemonOptions.value).toEqual({ debug: true });
+    expect(h.daemonOptions.value).toEqual({ debug: true, serverGC: false });
   });
 
   test("says where to reach it", async () => {
     const lines: string[] = await linesFrom({ debug: true }, project);
     expect(lines.join("\n")).toContain("http://127.0.0.1:9014/api");
+  });
+});
+
+describe("server GC", () => {
+  const project: StubDaemonOptions = {
+    sourceFiles: [mathFs],
+    compiled: { [mathFs]: "export const x = 1;" },
+  };
+
+  test("reaches the daemon when the option is on", async () => {
+    const h: Harness = harness({ serverGC: true }, project);
+    await h.start();
+    expect(h.daemonOptions.value).toEqual({ debug: false, serverGC: true });
   });
 });
 

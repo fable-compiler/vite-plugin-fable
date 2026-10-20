@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
+## [0.6.0] - 2026-10-20
+
+### Added
+
+- `serverGC` option. Runs the daemon with .NET's server garbage collector, which makes recompiles after an edit more than twice as fast. It costs memory: on fantomas-tools with 20 cores, about 100 MB more between edits and a peak about 300 MB higher, and the gap grows with the core count. Off by default. See [Server GC](https://fable.io/vite-plugin-fable/recipes.html#Server-GC). ([#74](https://github.com/fable-compiler/vite-plugin-fable/pull/74))
+
+### Changed
+
+- Updated Fable.Compiler to 5.21.0 and `@fable-org/fable-library-js` to 2.9.0. `Async.TryCancelled` is now supported, a value converts implicitly to an erased union it fits, `Dictionary.Remove` and `HashSet.Remove` no longer leave empty buckets behind, and cancelled delays, finalizers and cleanup now settle exactly once. ([#74](https://github.com/fable-compiler/vite-plugin-fable/pull/74))
+- The first type-check of a project is about 25% faster. The daemon now turns off the delay before the .NET JIT optimises hot code, so the F# compiler is no longer run unoptimised for most of that type-check. The same setting as [fable-compiler/Fable#5073](https://github.com/fable-compiler/Fable/pull/5073), without the server GC half of it, which costs memory. ([#74](https://github.com/fable-compiler/vite-plugin-fable/pull/74))
+- The daemon no longer grows its memory over a dev session. It held on to the garbage each compile left behind, so a project like fantomas-tools climbed past 750 MB after a few dozen edits. It now collects that garbage two seconds after the last request and returns it to the OS, which keeps the same project at about 375 MB without slowing down recompiles. ([#74](https://github.com/fable-compiler/vite-plugin-fable/pull/74))
+
 ## [0.5.2] - 2026-09-24
 
 ### Changed

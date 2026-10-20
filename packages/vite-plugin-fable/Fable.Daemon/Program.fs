@@ -538,6 +538,36 @@ let private replyWithError (logger : ILogger) (msg : Msg) (error : string) : uni
         // Replying twice throws, so the request was already answered and the caller is not stuck.
         logCritical logger $"Could not report the failure of {describe msg}: {replyFailure}"
 
+/// How long the daemon waits after a request before collecting the garbage it left. Long enough
+/// that a burst of saves costs one collection rather than one per save.
+let private idleCollectionDelay = TimeSpan.FromSeconds 2.0
+
+/// Whether the message loop has anything to collect once it goes idle.
+[<Struct>]
+type private IdleGarbage =
+    /// Nothing was served since the last idle collection, so the loop waits without a timeout.
+    /// Otherwise it would wake up every `idleCollectionDelay` to collect nothing.
+    | NothingToCollect
+    /// A request was served, so the loop collects once it has been idle for `idleCollectionDelay`.
+    | GarbageLeft
+
+/// A compile leaves a few hundred MB of garbage, and an idle daemon allocates nothing that would
+/// make the GC collect it, so a dev server would hold it for the rest of the session. Collecting
+/// between requests keeps that off the next compile. Aggressive mode also returns the freed memory
+/// to the OS; a plain collection leaves it committed, which with server GC is most of it.
+let private collectIdleGarbage (logger : ILogger) : unit =
+    let before = Environment.WorkingSet
+    let sw = Stopwatch.StartNew ()
+    GC.Collect (GC.MaxGeneration, GCCollectionMode.Aggressive, true, true)
+    sw.Stop ()
+
+    logger.LogDebug (
+        "Collected garbage while idle in {elapsed}ms, working set {before}MB -> {after}MB",
+        sw.ElapsedMilliseconds,
+        before / 1048576L,
+        Environment.WorkingSet / 1048576L
+    )
+
 type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
     let jsonMessageFormatter = new SystemTextJsonFormatter ()
 
@@ -634,9 +664,24 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                     | Disconnect -> return None
                 }
 
-            let rec loop (model : Model) =
+            let rec loop (model : Model) (idleGarbage : IdleGarbage) =
                 async {
-                    let! msg = inbox.Receive ()
+                    let! received =
+                        match idleGarbage with
+                        | GarbageLeft -> inbox.TryReceive (int idleCollectionDelay.TotalMilliseconds)
+                        | NothingToCollect ->
+                            async {
+                                let! msg = inbox.Receive ()
+                                return Some msg
+                            }
+
+                    match received with
+                    | None ->
+                        // Inside the loop rather than on a timer, so it can never start in the
+                        // middle of a compile. A request arriving now waits for it to finish.
+                        collectIdleGarbage logger
+                        return! loop model NothingToCollect
+                    | Some msg ->
 
                     // Anything escaping `handle` used to kill the agent, and the request that
                     // provoked it was never answered. `PostAndAsyncReply` has no timeout, so the
@@ -656,7 +701,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                     | None -> return ()
                     // Recursing outside the `try` above, so a long-lived agent does not stack one
                     // exception handler per message it has served.
-                    | Some model -> return! loop model
+                    | Some model -> return! loop model GarbageLeft
                 }
 
             loop
@@ -673,6 +718,7 @@ type FableServer(sender : Stream, reader : Stream, logger : ILogger) as this =
                     TypeCheckProjectResult = Unchecked.defaultof<TypeCheckProjectResult>
                     CrackerInput = None
                 }
+                NothingToCollect
         )
 
     // The loop answers and survives its own failures, so reaching here means the agent itself is
@@ -793,6 +839,13 @@ let logger : ILogger =
 
 // Set Fable logger
 Log.setLogger Verbosity.Verbose logger
+
+// The `serverGC` plugin option reaches the daemon as these, and the runtime has read them by now.
+// Clearing them keeps them from every process the daemon starts: its own cache probe, and Fable's
+// design time build and `dotnet build` of plugin projects. Those exit after one build, so server
+// GC would only cost them memory.
+Environment.SetEnvironmentVariable ("DOTNET_gcServer", null)
+Environment.SetEnvironmentVariable ("DOTNET_GCConserveMemory", null)
 
 let daemon =
     new FableServer (Console.OpenStandardOutput (), Console.OpenStandardInput (), logger)

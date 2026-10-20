@@ -22,6 +22,7 @@ Every option the plugin accepts. All of them are optional.
 | `exclude`                 | `string[]`                                              | `[]`                               | Passed to Fable. Excludes assemblies from compilation, typically Fable plugins.                                                               |
 | `debug`                   | `boolean`                                               | `false`                            | Print what the plugin is doing, and start the daemon's debug server. See [Seeing what the plugin is doing](#Seeing-what-the-plugin-is-doing). |
 | `fableModulesDiagnostics` | `boolean`                                               | `false`                            | Report diagnostics for files under `fable_modules`. See [Diagnostics from restored packages](#Diagnostics-from-restored-packages).            |
+| `serverGC`                | `boolean`                                               | `false`                            | Run the daemon with .NET's server GC: faster recompiles for more memory. See [Server GC](#Server-GC).                                         |
 
 `noReflection`, `temporal` and `exclude` are handed to Fable.Compiler unchanged; they mean what
 they mean for the `dotnet fable` CLI. Changing any of them invalidates the plugin's build caches,
@@ -32,7 +33,7 @@ a message rather than being quietly ignored:
 
 ```
 vite-plugin-fable: unknown option "noRefleciton". Did you mean "noReflection"?
-Known options: fsproj, jsx, noReflection, temporal, exclude, configuration, debug, fableModulesDiagnostics.
+Known options: fsproj, jsx, noReflection, temporal, exclude, configuration, debug, fableModulesDiagnostics, serverGC.
 ```
 
 If you write your Vite config in TypeScript you get the same feedback in the editor. The plugin
@@ -76,6 +77,31 @@ It is experimental in Fable, where it is the hidden `--test:js-temporal` flag, a
 passes it through. It sets the `FABLE_COMPILER_JAVASCRIPT_TEMPORAL` define as `dotnet fable` does,
 so F# code can branch on it. The plugin adds no polyfill: check that the browsers and runtimes you
 target ship `Temporal`, and load one yourself if they do not.
+
+## Server GC
+
+The daemon runs with .NET's workstation garbage collector by default, which keeps its memory low.
+Server GC collects on several threads instead of one, and that makes recompiles after an edit more
+than twice as fast:
+
+```js
+fable({ serverGC: true });
+```
+
+The price is memory, for as long as the dev server runs. On a 20-core machine, compiling
+[fantomas-tools](https://github.com/fsprojects/fantomas-tools) (93 files, recompiling 38 per edit):
+
+|            | Recompile | Memory between edits | Peak   |
+| ---------- | --------- | -------------------- | ------ |
+| default    | ~375 ms   | ~375 MB              | 490 MB |
+| `serverGC` | ~160 ms   | ~470 MB              | 810 MB |
+
+Server GC sizes itself to the number of cores, so the gap grows on bigger machines and shrinks on
+smaller ones. The plugin pairs it with `DOTNET_GCConserveMemory`, which holds it a little lower at
+no cost in speed. The design time build the daemon starts does not inherit either setting.
+
+In both modes the daemon collects its garbage once it has been idle for two seconds, which is why
+memory stays flat between edits instead of growing over a session.
 
 ## Seeing what the plugin is doing
 

@@ -354,6 +354,67 @@ let ``a request that cannot be served is answered, and the daemon keeps serving`
             (daemon :> IDisposable).Dispose()
     }
 
+/// Keeps every message logged, so a test can tell what the daemon did without a debug server.
+type private RecordingLogger() =
+    let messages = System.Collections.Concurrent.ConcurrentQueue<string>()
+    member _.Messages = List.ofSeq messages
+
+    interface Microsoft.Extensions.Logging.ILogger with
+        member _.BeginScope _ = null
+        member _.IsEnabled _ = true
+
+        member _.Log (_level, _eventId, state, ex, formatter) =
+            messages.Enqueue (formatter.Invoke (state, ex))
+
+/// Once it has served a request, the loop waits with a timeout and collects garbage when it fires,
+/// then goes back to waiting without one. A loop that broke on that path would leave every later
+/// request unanswered, the same way a dead loop does.
+[<Test>]
+let ``the daemon collects garbage once idle, and keeps serving after it`` () =
+    task {
+        let config = sampleApp
+
+        let mathFs =
+            Path.CombineNormalize (FileInfo(config.Project).Directory.FullName, "Math.fs")
+
+        let struct (serverStream, clientStream) = FullDuplexStream.CreatePair ()
+
+        let logger = RecordingLogger ()
+
+        let daemon = new Program.FableServer (serverStream, serverStream, logger)
+
+        let client = new JsonRpc (clientStream, clientStream)
+        client.StartListening ()
+
+        let compileAnswered () =
+            task {
+                // Nothing has been cracked, so this is answered with an error straight away. It
+                // still goes through the loop, which is all this test needs.
+                let compile = daemon.CompileFiles { FileNames = [| mathFs |] }
+                let! answered = Task.WhenAny (compile :> Task, Task.Delay (TimeSpan.FromSeconds 30.))
+                return obj.ReferenceEquals (answered, compile)
+            }
+
+        try
+            let! first = compileAnswered ()
+            Assert.That (first, Is.True, "the daemon never answered the first request")
+
+            // Longer than `idleCollectionDelay` in Program.fs.
+            do! Task.Delay (TimeSpan.FromSeconds 3.)
+
+            let collections =
+                logger.Messages
+                |> List.filter (fun message -> message.StartsWith "Collected garbage while idle")
+
+            Assert.That (collections, Has.Length.EqualTo 1, "the daemon did not collect exactly once while idle")
+
+            let! second = compileAnswered ()
+            Assert.That (second, Is.True, "the daemon stopped answering after its idle collection")
+        finally
+            client.Dispose ()
+            (daemon :> IDisposable).Dispose()
+    }
+
 /// The design time build cache is keyed on everything that changes what Fable emits. Options that
 /// only live in the Vite config used to be left out, so flipping one served stale JavaScript.
 module CacheKeyTests =

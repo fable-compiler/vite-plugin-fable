@@ -45,15 +45,15 @@
     "prepack": "bun run build:daemon && bun run build"
   },
   "dependencies": {
-    "@babel/code-frame": "^8.0.0",
+    "@babel/code-frame": "^8.0.6",
     "@fable-org/fable-library-js": "catalog:",
     "@rolldown/pluginutils": "^1.0.1",
     "picocolors": "^1.1.1",
     "ts-lsp-client": "1.1.1"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.0",
-    "@types/node": "^26.4.1",
+    "@types/bun": "^1.4.3",
+    "@types/node": "^26.6.5",
     "typescript": "7.0.2",
     "vite": "catalog:"
   },

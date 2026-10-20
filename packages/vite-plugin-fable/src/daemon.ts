@@ -38,6 +38,29 @@ function describeStartFailure(reason: string): string {
 }
 
 /**
+ * The environment the daemon starts with: `base` plus whatever {@link DaemonOptions} turn on.
+ * Both options are read by the daemon or its runtime at startup, so the environment is how they
+ * reach it.
+ */
+export function daemonEnvironment(
+  options: DaemonOptions,
+  base: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...base,
+    // The daemon decides whether to start its debug server from this variable alone, so the
+    // `debug` plugin option reaches it by setting the variable the child sees.
+    VITE_PLUGIN_FABLE_DEBUG: options.debug ? "1" : "",
+  };
+  if (options.serverGC) {
+    env.DOTNET_gcServer = "1";
+    // Measured on fantomas-tools: about 135 MB less than server GC alone, at the same speed.
+    env.DOTNET_GCConserveMemory = "7";
+  }
+  return env;
+}
+
+/**
  * Spawns `Fable.Daemon` and returns a handle to it.
  *
  * The returned daemon owns the child process for its whole lifetime: callers never see the process,
@@ -59,14 +82,7 @@ export function startDaemon(logger: DaemonLogger, options: DaemonOptions): Fable
   const dotnetProcess: ChildProcessWithoutNullStreams = spawn(
     "dotnet",
     [daemonAssembly, "--stdio"],
-    {
-      stdio: "pipe",
-      // The daemon decides whether to start its debug server from this variable alone, so the
-      // `debug` plugin option reaches it by setting the variable the child sees.
-      env: options.debug
-        ? { ...process.env, VITE_PLUGIN_FABLE_DEBUG: "1" }
-        : { ...process.env, VITE_PLUGIN_FABLE_DEBUG: "" },
-    },
+    { stdio: "pipe", env: daemonEnvironment(options, process.env) },
   );
   const endpoint: JSONRPCEndpoint = new JSONRPCEndpoint(dotnetProcess.stdin, dotnetProcess.stdout);
   let disposed = false;
