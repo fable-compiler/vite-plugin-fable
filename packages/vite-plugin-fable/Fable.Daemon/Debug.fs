@@ -296,6 +296,10 @@ let relativeTo (root : string) (file : string) : string =
     with _ ->
         file
 
+/// Fable reports paths with forward slashes on every OS, but `Path.GetFullPath` gives backslashes on
+/// Windows. Put a path in Fable's form before comparing it with one Fable gave.
+let normalisePath (path : string) : string = path.Replace ('\\', '/')
+
 let rootOf (project : ProjectState) : string =
     try
         Path.GetDirectoryName project.Fsproj
@@ -469,16 +473,21 @@ let filesPayload (project : ProjectState) (compile : CompileState option) =
             |> Array.mapi (fun index file -> describeFile root index compile file)
     |}
 
-/// A caller can name a file however it has it: absolute, or relative to the project.
+/// A caller can name a file however it has it: absolute, or relative to the project, with either
+/// slash.
 let resolveFile (project : ProjectState) (asked : string) : FullPath option =
+    let asked = normalisePath asked
+
     let candidate =
-        if Path.IsPathRooted asked then
-            Path.GetFullPath asked
-        else
-            Path.GetFullPath (Path.Combine (rootOf project, asked))
+        normalisePath (
+            if Path.IsPathRooted asked then
+                Path.GetFullPath asked
+            else
+                Path.GetFullPath (Path.Combine (rootOf project, asked))
+        )
 
     project.SourceFiles
-    |> Array.tryFind (fun file -> String.Equals (file, candidate, StringComparison.OrdinalIgnoreCase))
+    |> Array.tryFind (fun file -> String.Equals (normalisePath file, candidate, StringComparison.OrdinalIgnoreCase))
 
 let filePayload (project : ProjectState) (compile : CompileState option) (withSource : bool) (file : FullPath) =
     let root = rootOf project
@@ -542,7 +551,7 @@ let diagnosticsPayload
     let matchesFile (d : Diagnostic) =
         match file with
         | None -> true
-        | Some wanted -> d.FileName.Contains (wanted, StringComparison.OrdinalIgnoreCase)
+        | Some wanted -> (normalisePath d.FileName).Contains(normalisePath wanted, StringComparison.OrdinalIgnoreCase)
 
     let filtered =
         tagged

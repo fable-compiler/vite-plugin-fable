@@ -607,8 +607,13 @@ module DebugServerTests =
     let private sampleProjectDir =
         Path.CombineNormalize (__SOURCE_DIRECTORY__, "../../../sample-project")
 
-    let private mathFs = Path.CombineNormalize (sampleProjectDir, "Math.fs")
-    let private libraryFs = Path.CombineNormalize (sampleProjectDir, "Library.fs")
+    // Forward slashes on every OS, because that is how Fable's cracker reports source files.
+    // `CombineNormalize` gives backslashes on Windows, which hid a path lookup that never matched there.
+    let private mathFs =
+        Path.CombineNormalize(sampleProjectDir, "Math.fs").Replace('\\', '/')
+
+    let private libraryFs =
+        Path.CombineNormalize(sampleProjectDir, "Library.fs").Replace('\\', '/')
 
     let private projectState : Debug.ProjectState =
         {
@@ -801,6 +806,16 @@ module DebugServerTests =
                 withoutSource.RootElement.GetProperty("javaScript").ValueKind,
                 Is.EqualTo JsonValueKind.Null,
                 "a caller that only wants the summary should not be handed the whole module"
+            )
+
+            // What a caller on Windows types. It has to find the same file as the forward-slash
+            // path Fable reports.
+            let backslashed = Uri.EscapeDataString (mathFs.Replace ('/', '\\'))
+            use! byBackslashes = getJson client $"{baseUrl}/api/files?path={backslashed}"
+
+            Assert.That (
+                byBackslashes.RootElement.GetProperty("file").GetProperty("path").GetString(),
+                Is.EqualTo mathFs
             )
 
             let! unknown = client.GetAsync $"{baseUrl}/api/files?path=NotInTheProject.fs"
