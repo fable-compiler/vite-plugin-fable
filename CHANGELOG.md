@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from version [0.1.0] moving forward.
 
+## [0.6.1] - 2026-10-23
+
+### Fixed
+
+- The `debug` server's `/api/files?path=` now finds files on Windows. It compared the path it was asked for, which `Path.GetFullPath` turns into backslashes on Windows, with the forward-slash paths Fable reports, so every lookup there answered 404, even for a file `/api/files` listed. Both sides are now compared in Fable's forward-slash form, so either slash works, and `/api/diagnostics?file=` accepts either slash too. ([#75](https://github.com/fable-compiler/vite-plugin-fable/issues/75))
+
 ## [0.6.0] - 2026-10-20
 
 ### Added
